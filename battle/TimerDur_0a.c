@@ -4,7 +4,7 @@
 // All inputs/outputs in WRAM:
 //   in : ram[$397B] = base value
 //   out: ram[$A9] = result from Mult8, modified by ApplySpeedMod, then passed to SetTimerDur
-static void TimerDur_0a_c(Snes *snes) {
+void TimerDur_0a_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     ram[0xDF] = ram[0x397B];     // lda $397b / sta $df
     ram[0xE1] = 3;               // lda #$03 / sta $e1

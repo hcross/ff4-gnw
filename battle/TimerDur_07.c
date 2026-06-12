@@ -11,7 +11,7 @@
 //   ram[$A9] = value
 //   ApplySpeedMod()
 //   SetTimerDur()
-static void TimerDur_07_c(Snes *snes, uint16_t x) {
+void TimerDur_07_c(Snes *snes, uint16_t x) {
     uint8_t *ram = snes->ram;
     uint8_t base;
     if (ram[0x3558] != 0) {              // beq @9f0d

@@ -3,7 +3,7 @@
 // Entry mode: A 8-bit (mf=1), X 16-bit (xf=0), DB=$7E, DP=0
 // Input: X = target index (used as offset into $2000+ structures)
 // Output: ram[$35EA] = 0 if target valid, 1 if invalid
-static void ValidateAITarget_c(Snes *snes, uint16_t x) {
+void ValidateAITarget_c(Snes *snes, uint16_t x) {
     uint8_t *ram = snes->ram;
     ram[0x35EA] = 0;                    // stz $35ea
     uint8_t a = ram[0x2003 + x];        // lda $2003,x

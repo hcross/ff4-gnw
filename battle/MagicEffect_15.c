@@ -4,7 +4,7 @@
 // All inputs/outputs in WRAM:
 //   in : $a4-$a5 = damage (16-bit LE), $270b = current_hp (16-bit LE), $270d = max_hp (16-bit LE)
 //   out: $270b = updated_hp (16-bit LE), $a5 = updated flags (bit 7/6 set)
-static void MagicEffect_15_c(Snes *snes) {
+void MagicEffect_15_c(Snes *snes) {
     uint8_t *ram = snes->ram;
 
     calc_dmg_emu(snes);         // jsr CalcDmg

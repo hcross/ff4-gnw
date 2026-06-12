@@ -3,7 +3,7 @@
 // Entry mode: A 16-bit (mf=0), X 16-bit (xf=0), DB=$7E, DP=0
 // No inputs or outputs in registers; all state is internal or in WRAM.
 // This is a pure wrapper around ExecBtlGfx_ext.
-static void ExecBtlGfx_c(Snes *snes) {
+void ExecBtlGfx_c(Snes *snes) {
     Cpu *cpu = snes->cpu;
     cpu->mf = false;  // A 16-bit
     cpu->xf = false;  // X/Y 16-bit

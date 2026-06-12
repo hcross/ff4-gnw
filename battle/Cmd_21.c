@@ -2,7 +2,7 @@
 
 // Entry mode: A 8-bit (mf=1), X 16-bit (xf=0), DB=$7E, DP=0
 // Sets bit 6 of ram[$34C2], used to mark a command flag
-static void Cmd_21_c(Snes *snes) {
+void Cmd_21_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     ram[0x34C2] |= 0x40;  // set bit 6
 }

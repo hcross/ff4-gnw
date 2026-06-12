@@ -4,7 +4,7 @@
 // Input: none (no registers or RAM inputs)
 // Output: A = random number 0-98 (8-bit), X = same as A
 // This function clears A/X to 0, then generates a random number 0-98
-static void Rand99_c(Snes *snes) {
+void Rand99_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     // clr_ax → tdc / tax (A = DP = 0, X = A = 0)
     // Since DP=0 (battle convention), clr_ax produces A=0, X=0

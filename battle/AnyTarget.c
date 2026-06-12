@@ -3,7 +3,7 @@
 // This function selects a random target by first attempting to target
 // a character, and if that fails, targeting a monster instead.
 // It acts as a fallback chain: character → monster.
-static void AnyTarget_c(Snes *snes) {
+void AnyTarget_c(Snes *snes) {
     target_character_emu(snes);  // jsr TargetCharacter
     target_monster_emu(snes);    // jmp TargetMonster (tail call)
 }

@@ -3,7 +3,7 @@
 // Entry mode: A 8-bit (mf=1), X 16-bit (xf=0), DB=$7E, DP=0
 // Entry: cpu->a = object_id (7-bit index + monster flag in bit 7)
 // Output: ram[$80-$81] = pointer to object (16-bit LE)
-static void GetObjPtr_c(Snes *snes, uint8_t obj_id) {
+void GetObjPtr_c(Snes *snes, uint8_t obj_id) {
     uint8_t *ram = snes->ram;
     uint8_t index = obj_id & 0x7F;       // and #$7f
     ram[0xDF] = index;

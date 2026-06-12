@@ -7,7 +7,7 @@
 //        ram[$E1] = 6 (constant)
 //        Mult8 result in $E3 (via Mult8)
 //        Final result in A (from _9eab, via ROM table)
-static void TimerDur_0b_c(Snes *snes) {
+void TimerDur_0b_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     ram[0xDF] = ram[0x397B];         // lda $397b / sta $df
     ram[0xE1] = 6;                   // lda #$06 / sta $e1

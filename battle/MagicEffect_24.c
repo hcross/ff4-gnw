@@ -5,7 +5,7 @@
 //   $2709, $2707 = 16-bit values (HP before/after or similar)
 // Output:
 //   $a4 (low) and $a5 (high) = 16-bit difference, high bit set in $a5
-static void MagicEffect_24_c(Snes *snes) {
+void MagicEffect_24_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     // Compute 16-bit difference with carry set
     uint16_t a = read16(ram, 0x2709);  // lda $2709

@@ -5,7 +5,7 @@
 //   in : ram[$397B] = base value, ram[$388B] = auto-battle flag
 //   out: ram[$A9] = final timer duration (16-bit)
 //        (also calls ApplySpeedMod and SetTimerDur which modify other state)
-static void TimerDur_03_c(Snes *snes) {
+void TimerDur_03_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     ram[0xDF] = ram[0x397B];         // lda $397b / sta $df
     ram[0xE1] = 6;                   // lda #$06 / sta $e1

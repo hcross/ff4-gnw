@@ -2,7 +2,7 @@
 
 // This function sets up battle message type 3 with display flag $F8
 // in the battle message buffer at $33C6-$33C7.
-static void AddMsg2_c(Snes *snes) {
+void AddMsg2_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     ram[0x33C6] = 0xF8;  // display text flag
     ram[0x33C7] = 0x03;  // battle message type

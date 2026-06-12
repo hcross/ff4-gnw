@@ -7,7 +7,7 @@
 //   $3960 = subtrahend (16-bit)
 // Output:
 //   $3962 = difference (16-bit)
-static void Sub16_c(Snes *snes) {
+void Sub16_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     uint16_t minuend = read16(ram, 0x395E);
     uint16_t subtrahend = read16(ram, 0x3960);

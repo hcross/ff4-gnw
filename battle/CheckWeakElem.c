@@ -4,7 +4,7 @@
 // All inputs/outputs in WRAM (no register I/O — convention battle):
 //   in : ram[$38FE] = action type, ram[$2720] and ram[$2721] = target elemental props
 //   out: ram[$38FE] = updated action type (e.g. 0x04 or 0x08 for healing)
-static void CheckWeakElem_c(Snes *snes) {
+void CheckWeakElem_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     uint8_t action = ram[0x38FE];
     if (action != 2) return;              // cmp #$02 / bne @e155

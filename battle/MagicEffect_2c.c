@@ -4,7 +4,7 @@
 // All inputs/outputs in WRAM:
 //   in : ram[$2707-$2708] 16-bit value
 //   out: ram[$a4-$a5] = (ram[$2707-$2708] / 3) | 0x8000
-static void MagicEffect_2c_c(Snes *snes) {
+void MagicEffect_2c_c(Snes *snes) {
     uint8_t *ram = snes->ram;
 
     // Load 16-bit value from $2707-$2708 into $3945-$3946

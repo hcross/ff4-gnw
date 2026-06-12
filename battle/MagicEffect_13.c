@@ -5,7 +5,7 @@
 //   in : ram[$38E5] bit0 (0=ally, 1=enemy)
 //   out: ram[$38F3], ram[$38D3], ram[$35A3] (if ally)
 //        ram[$3550], ram[$34CA] (if enemy)
-static void MagicEffect_13_c(Snes *snes) {
+void MagicEffect_13_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     uint8_t a = ram[0x38E5] & 1;  // lda $38e5 / and #$01
     if (a != 0) {                 // bne @d984

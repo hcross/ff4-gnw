@@ -2,7 +2,7 @@
 
 // Entry mode: A 8-bit (mf=1), X 16-bit (xf=0), DB=$7E, DP=0
 // No input registers; output is fixed: ram[$A8] = 4
-static void MagicEffect_32_c(Snes *snes) {
+void MagicEffect_32_c(Snes *snes) {
     snes->ram[0xA8] = 4;
 }
 

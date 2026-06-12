@@ -3,7 +3,7 @@
 // CountBits: counts the number of set bits in the 8-bit input value.
 // Entry: A = value to count bits in (8-bit)
 // Exit:  X = number of set bits (0-8)
-static void CountBits_c(Snes *snes, uint8_t a) {
+void CountBits_c(Snes *snes, uint8_t a) {
     uint16_t x = 0;           // ldx #0
     for (int y = 8; y > 0; y--) {  // ldy #8 / dey / bne loop
         if (a & 0x80) x++;    // asl A / bcc (inverted) → if carry, inc X

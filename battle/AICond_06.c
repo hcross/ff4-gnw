@@ -7,7 +7,7 @@
 //   index into $29B5[X] to get index2
 //   read $29CA[index2] and compare with $29CD
 //   if equal, increment $DE
-static void AICond_06_c(Snes *snes) {
+void AICond_06_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     uint16_t x = (uint16_t)(ram[0xD2] - 5);        // sec / lda $d2 / sbc #$05 / tax
     uint16_t index2 = ram[0x29B5 + x];             // lda $29b5,x / tax

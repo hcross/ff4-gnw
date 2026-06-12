@@ -3,7 +3,7 @@
 // Entry mode: A 8-bit (mf=1), X 16-bit (xf=0), DB=$7E, DP=0
 // No input registers are used; routine loads hardcoded pointer to NoWinAnimTbl
 // No output registers; result is in RAM (handled by CheckBattleList)
-static void CheckWinAnim_c(Snes *snes) {
+void CheckWinAnim_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     // Load 16-bit pointer to NoWinAnimTbl into $ab (LE format)
     write16(ram, 0xAB, 0xA30F);  // NoWinAnimTbl = $7E:A30F

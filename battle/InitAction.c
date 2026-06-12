@@ -15,7 +15,7 @@
 //      - Else:
 //          - action = 3 (do timer effect)
 //   5. Store action type in $352e, clear $d1, return
-static void InitAction_c(Snes *snes) {
+void InitAction_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     uint8_t d2 = ram[0xD2];
     ram[0x38F6] = d2;

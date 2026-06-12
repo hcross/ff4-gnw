@@ -4,7 +4,7 @@
 // Entry: none (no registers read at entry)
 // Logic:
 //   Compare $35F3[X] with $289F. If equal, increment $DE.
-static void AICond_02_c(Snes *snes) {
+void AICond_02_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     uint16_t x = ram[0x289E];              // lda $289e / tax (X 16-bit)
     uint8_t val = ram[0x35F3 + x];         // lda $35f3,x

@@ -3,7 +3,7 @@
 // Entry mode: A 8-bit (mf=1), X 16-bit (xf=0), DB=$7E, DP=0
 // Entry: cpu->a = offset, ram[$3530] = base pointer (16-bit LE)
 // Output: ram[$3598] = base + offset (16-bit LE)
-static void GetTimerPtr_c(Snes *snes, uint8_t offset) {
+void GetTimerPtr_c(Snes *snes, uint8_t offset) {
     uint8_t *ram = snes->ram;
     uint16_t base = read16(ram, 0x3530);  // lda $3530 (16-bit)
     uint16_t sum = base + offset;         // clc / adc $3530

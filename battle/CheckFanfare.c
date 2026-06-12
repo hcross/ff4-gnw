@@ -3,7 +3,7 @@
 // Entry mode: A 16-bit (mf=0), X 16-bit (xf=0), DB=$7E, DP=0
 // This function initializes a pointer to NoFanfareTbl and jumps to CheckBattleList.
 // No inputs from registers; all state is passed via RAM or subroutines.
-static void CheckFanfare_c(Snes *snes) {
+void CheckFanfare_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     // Load 16-bit address of NoFanfareTbl into $ab (low) and $ad (high)
     write16(ram, 0xAB, 0x886F);  // NoFanfareTbl address assumed from context

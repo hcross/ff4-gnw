@@ -3,7 +3,7 @@
 // Entry mode: A 16-bit (mf=0), X 16-bit (xf=0), DB=0, DP=0 (inherited)
 // This function is a setup/teardown wrapper that configures hardware registers
 // and calls InitBattle. It preserves all registers across the call.
-static void ExecBattle_c(Snes *snes) {
+void ExecBattle_c(Snes *snes) {
     Cpu *cpu = snes->cpu;
     uint8_t *ram = snes->ram;
 

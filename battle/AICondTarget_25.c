@@ -4,7 +4,7 @@
 // All inputs/outputs in WRAM (no register I/O — convention battle):
 //   out: ram[$AB] = 0 (cleared before jumping to TargetMonsterType)
 //   Note: TargetMonsterType is expected to update ram[$AB] based on monster type logic
-static void AICondTarget_25_c(Snes *snes) {
+void AICondTarget_25_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     ram[0xAB] = 0;                    // stz $ab
     target_monster_type_emu(snes);    // jmp TargetMonsterType (delegated)

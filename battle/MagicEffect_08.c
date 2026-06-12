@@ -3,7 +3,7 @@
 // Entry mode: A 8-bit (mf=1), X 16-bit (xf=0), DB=$7E, DP=0
 // This function sets bits 2 and 3 ($0C) in the byte at $2706
 // No inputs or outputs in registers; all access is via WRAM
-static void MagicEffect_08_c(Snes *snes) {
+void MagicEffect_08_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     ram[0x2706] |= 0x0C;  // lda / ora #$0c / sta (8-bit operation)
 }

@@ -3,7 +3,7 @@
 // Entry mode: A 8-bit (mf=1), X 16-bit (xf=0), DB=$7E, DP=0
 // This function checks if only one monster remains ($29cd == 1),
 // and if so, increments $de.
-static void AICond_0b_c(Snes *snes) {
+void AICond_0b_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     uint8_t count = ram[0x29CD];  // load monster count
     if (count == 1) {             // cmp #$01 / bne @bf0e

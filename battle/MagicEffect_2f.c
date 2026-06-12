@@ -2,7 +2,7 @@
 
 // Entry mode: A 8-bit (mf=1), X 16-bit (xf=0), DB=$7E, DP=0
 // This function decrements the byte at $3881 and returns.
-static void MagicEffect_2f_c(Snes *snes) {
+void MagicEffect_2f_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     ram[0x3881]--;  // dec $3881
 }

@@ -7,7 +7,7 @@
 //     clear bit (A & $7F) in $3550 (targets)
 //   else:
 //     clear bit (A & $7F) in $3523 (targets reflected onto)
-static void RemoveTarget_c(Snes *snes) {
+void RemoveTarget_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     uint8_t a = ram[0x3554];
     uint8_t bit = ram[0xCE] & 0x7F;

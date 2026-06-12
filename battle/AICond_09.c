@@ -7,7 +7,7 @@
 //     ram[$DE]++;
 //   }
 //   return
-static void AICond_09_c(Snes *snes) {
+void AICond_09_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     if (ram[0x38D3] != 0) {  // beq @beeb → taken when zero
         ram[0xDE]++;         // inc $de

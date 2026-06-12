@@ -5,7 +5,7 @@
 // Entry mode: A 16-bit (mf=0), X 16-bit (xf=0), DB=$7E, DP=0
 // Input: X = index (0-6), each entry is 2 bytes, so offset = index * 2
 // Output: A = value from table (16-bit)
-static uint16_t NoFanfareTbl_c(Snes *snes, uint16_t index) {
+uint16_t NoFanfareTbl_c(Snes *snes, uint16_t index) {
     // Table data: dc 00 dd 00 e1 00 e7 00 a7 01 af 01 b6 01 ff
     static const uint16_t table[] = { 0x00dc, 0x00dd, 0x00e1, 0x00e7, 0x01a7, 0x01af, 0x01b6 };
     if (index >= 7) return 0xffff;  // out of bounds, return $ff as 16-bit

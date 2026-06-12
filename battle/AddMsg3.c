@@ -2,7 +2,7 @@
 
 // Sets up a battle message to display "Not enough MP" (index 0x03F8)
 // Entry mode: A 8-bit (mf=1), X 16-bit (xf=0), DB=$7E, DP=0
-static void AddMsg3_c(Snes *snes) {
+void AddMsg3_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     ram[0x33C8] = 0xF8;  // message index low byte
     ram[0x33C9] = 0x03;  // message index high byte (0x03F8)

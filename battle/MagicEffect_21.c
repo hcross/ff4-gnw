@@ -8,7 +8,7 @@
 //        set $28a3 = 0x80 and jump to SetMagicStatus2
 //      Else:
 //        set $28a4 = 0x20 and jump to SleepParalyzeEffect
-static void MagicEffect_21_c(Snes *snes) {
+void MagicEffect_21_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     Cpu *cpu = snes->cpu;
 

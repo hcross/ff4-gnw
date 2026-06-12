@@ -3,7 +3,7 @@
 // Entry mode: A 8-bit (mf=1), X 16-bit (xf=0), DB=$7E, DP=0
 // Entry: ram[$3558] = timer condition (0 or non-zero)
 // Output: $a9 = 0 if $3558 == 0, else 1; then ApplySpeedMod and SetTimerDur
-static void TimerDur_02_c(Snes *snes) {
+void TimerDur_02_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     uint16_t x;
 

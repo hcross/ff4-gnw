@@ -7,7 +7,7 @@
 //   2. Rotate carry into $28A4, repeat Y times (Y = random)
 //   3. If random number was 5 (impossible with X=3), jump to SetMagicStatus2
 //   4. Else jump to SleepParalyzeEffect
-static void MagicEffect_20_c(Snes *snes) {
+void MagicEffect_20_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     Cpu *cpu = snes->cpu;
 

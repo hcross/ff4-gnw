@@ -8,6 +8,14 @@
 #include "cpu.h"
 #include "statehandler.h"
 
+#ifdef FF4_PORT_STATIC_SNES
+#include "snes.h"
+/* Native-C dispatch hook: when the 65816 calls a routine we have a
+ * vetted C body for, run the C body instead of interpreting the asm.
+ * Defined in dispatch_battle.c (auto-generated). */
+extern int ff4_dispatch_try(Snes *snes, uint32_t pc);
+#endif
+
 static uint8_t cpu_read(Cpu* cpu, uint32_t adr);
 static void cpu_write(Cpu* cpu, uint32_t adr, uint8_t val);
 static void cpu_idle(Cpu* cpu);
@@ -1007,6 +1015,15 @@ static void cpu_doOpcode(Cpu* cpu, uint8_t opcode) {
       cpu_idle(cpu);
       cpu_pushWord(cpu, cpu->pc - 1, true);
       cpu->pc = value;
+#ifdef FF4_PORT_STATIC_SNES
+      {
+        uint32_t target_pc = ((uint32_t)cpu->k << 16) | cpu->pc;
+        if (ff4_dispatch_try((Snes *)cpu->mem, target_pc)) {
+          /* Body ran. Simulate RTS so the caller continues. */
+          cpu->pc = cpu_pullWord(cpu, false) + 1;
+        }
+      }
+#endif
       break;
     }
     case 0x21: { // and idx
@@ -1023,6 +1040,16 @@ static void cpu_doOpcode(Cpu* cpu, uint8_t opcode) {
       cpu_pushWord(cpu, cpu->pc - 1, true);
       cpu->pc = value;
       cpu->k = newK;
+#ifdef FF4_PORT_STATIC_SNES
+      {
+        uint32_t target_pc = ((uint32_t)cpu->k << 16) | cpu->pc;
+        if (ff4_dispatch_try((Snes *)cpu->mem, target_pc)) {
+          /* Body ran. Simulate RTL so the caller continues. */
+          cpu->pc = cpu_pullWord(cpu, false) + 1;
+          cpu->k = cpu_pullByte(cpu);
+        }
+      }
+#endif
       break;
     }
     case 0x23: { // and sr

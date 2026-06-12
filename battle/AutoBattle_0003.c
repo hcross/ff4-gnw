@@ -7,7 +7,7 @@
 // No execution logic is present — this is pure data. The C translation
 // is a placeholder that does nothing, as the script is read directly
 // by the interpreter loop in battle scripting code.
-static void AutoBattle_0003_c(Snes *snes) {
+void AutoBattle_0003_c(Snes *snes) {
     // Script data:
     //   $CE,$00 = use command "kick"
     //   $C0,$00 = use command "fight"

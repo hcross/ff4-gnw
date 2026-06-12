@@ -4,7 +4,7 @@
 // Inputs:  ram[$393D] = multiplicand, ram[$393F] = multiplier
 // Outputs: ram[$3941] = low 16 bits of product, ram[$3943] = high 16 bits
 // Entry mode: A 16-bit (mf=0), X 16-bit (xf=0), DB=$7E, DP=0
-static void Mult16_c(Snes *snes) {
+void Mult16_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     uint16_t multiplicand = read16(ram, 0x393D);
     uint16_t multiplier = read16(ram, 0x393F);

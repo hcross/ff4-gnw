@@ -3,7 +3,7 @@
 // 16-bit unsigned division: ram[$3945] / ram[$3947] → ram[$3949] (quotient), ram[$394B] (remainder)
 // Entry mode: A 16-bit (mf=0), X/Y 16-bit (xf=0), DB=$7E, DP=0
 // Uses no sub-routines — fully self-contained.
-static void Div16_c(Snes *snes) {
+void Div16_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     write16(ram, 0x3949, 0);  // quotient
     write16(ram, 0x394B, 0);  // remainder
