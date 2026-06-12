@@ -80,13 +80,21 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x03fe36, AutoBattle_0003_c },
 };
 
+uint32_t ff4_dispatch_hits = 0;
+uint32_t ff4_dispatch_misses = 0;
+
 int ff4_dispatch_try(Snes *snes, uint32_t pc) {
     int lo = 0, hi = FF4_DISPATCH_COUNT - 1;
     while (lo <= hi) {
         int mid = (lo + hi) >> 1;
         uint32_t e = ff4_dispatch_table[mid].pc;
-        if (e == pc) { ff4_dispatch_table[mid].fn(snes); return 1; }
+        if (e == pc) {
+            ff4_dispatch_hits++;
+            ff4_dispatch_table[mid].fn(snes);
+            return 1;
+        }
         if (e < pc) lo = mid + 1; else hi = mid - 1;
     }
+    ff4_dispatch_misses++;
     return 0;
 }
