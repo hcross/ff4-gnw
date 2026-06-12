@@ -27,6 +27,7 @@ RUNS = {
     'battle':   FF4_PORT / 'translator/runs/qwen3_validation_after_retry.jsonl',
     'cutscene': FF4_PORT / 'translator/runs/cutscene_validation_after_retry.jsonl',
     'sound':    FF4_PORT / 'translator/runs/sound_validation.jsonl',
+    'field':    FF4_PORT / 'translator/runs/field_validation_after_retry.jsonl',
 }
 
 def has_standard_sig(name, mod):

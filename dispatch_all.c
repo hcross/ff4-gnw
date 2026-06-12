@@ -1,6 +1,63 @@
 #include "dispatch_all.h"
 
 const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
+    { 0x00808e, AfterBattle_c },  /* field */
+    { 0x0080a0, FieldMain_c },  /* field */
+    { 0x00834e, InitMapRAM_c },  /* field */
+    { 0x008690, LoadTitleGfx_c },  /* field */
+    { 0x008dfc, WaitKeyUp_c },  /* field */
+    { 0x008e05, WaitKeyDown_c },  /* field */
+    { 0x008e57, TfrWaterLavaGfx_c },  /* field */
+    { 0x008f34, TfrLavaGfx_c },  /* field */
+    { 0x0099fb, GiveGil_c },  /* field */
+    { 0x009ae9, GetTreasureTiles_c },  /* field */
+    { 0x009b5b, GetTreasurePtr_c },  /* field */
+    { 0x00a03e, BoardChoco_c },  /* field */
+    { 0x00aa58, CheckTilePass_c },  /* field */
+    { 0x00ab13, ClearPlayerNPCMap_c },  /* field */
+    { 0x00af24, CloseYesNoWindow_c },  /* field */
+    { 0x00b09c, ScrollItemListDown_c },  /* field */
+    { 0x00b143, TfrBGGfx_c },  /* field */
+    { 0x00b6f1, InitDlgIRQ_c },  /* field */
+    { 0x00b8c9, _15b8c9_c },  /* field */
+    { 0x00bb6a, _15bb6a_c },  /* field */
+    { 0x00bfe3, _00bfe3_c },  /* field */
+    { 0x00c11f, ReloadNPCs_c },  /* field */
+    { 0x00c144, _15c144_c },  /* field */
+    { 0x00c23d, _15c23d_c },  /* field */
+    { 0x00c59a, AfterCutscene_c },  /* field */
+    { 0x00c8bc, Special_2d_c },  /* field */
+    { 0x00cb05, _00cb05_c },  /* field */
+    { 0x00cb5f, TfrBGAnimGfx_c },  /* field */
+    { 0x00cb72, _00cb72_c },  /* field */
+    { 0x00cfc4, Special_1d_c },  /* field */
+    { 0x00cfd0, Special_1c_c },  /* field */
+    { 0x00d342, Special_0d_c },  /* field */
+    { 0x00d831, Special_1e_c },  /* field */
+    { 0x00dbbe, IncBrightness_c },  /* field */
+    { 0x00dbd2, LoadOverworldIntro_c },  /* field */
+    { 0x00de1b, _00de1b_c },  /* field */
+    { 0x00df53, _00df53_c },  /* field */
+    { 0x00e35b, WaitVblankEvent_c },  /* field */
+    { 0x00e613, EventCmd_d8_c },  /* field */
+    { 0x00e7d3, EventCmd_d7_c },  /* field */
+    { 0x00eb47, EventCmd_e0_c },  /* field */
+    { 0x00ec06, EventCmd_e6_c },  /* field */
+    { 0x00ec3e, EventCmd_dd_c },  /* field */
+    { 0x00ed1d, SetCurrGil_c },  /* field */
+    { 0x00ee1c, EventCmd_d0_c },  /* field */
+    { 0x00ee25, EventCmd_d1_c },  /* field */
+    { 0x00ee35, TfrInvertPal_c },  /* field */
+    { 0x00f58e, _14f58e_c },  /* field */
+    { 0x00f626, GilWindowTiles3_c },  /* field */
+    { 0x00f63e, GilWindowTiles4_c },  /* field */
+    { 0x00f6d6, DlgTilesTop_c },  /* field */
+    { 0x00f796, MapTitleTilesTop_c },  /* field */
+    { 0x00f922, _00f922_c },  /* field */
+    { 0x00fa16, LavaAnimPal_c },  /* field */
+    { 0x00fb1e, WipeScanlineTbl_c },  /* field */
+    { 0x00fb93, TfrBG2Tilemap_c },  /* field */
+    { 0x00ffe0, Vectors_c },  /* field */
     { 0x038009, ExecBattle_c },  /* battle */
     { 0x03805f, DrawMP_c },  /* battle */
     { 0x038085, ExecBtlGfx_c },  /* battle */
