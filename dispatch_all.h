@@ -100,3 +100,4 @@ extern const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT];
 int ff4_dispatch_try(Snes *snes, uint32_t pc);
 extern uint32_t ff4_dispatch_hits;
 extern uint32_t ff4_dispatch_misses;
+extern uint32_t ff4_miss_per_bank[256];
