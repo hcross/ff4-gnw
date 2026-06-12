@@ -10,6 +10,15 @@ void write16(uint8_t *ram, int addr, uint16_t v) {
     ram[addr + 1] = (uint8_t)((v >> 8) & 0xff);
 }
 
+/* Run an emulated 65816 routine at the given 24-bit address. Some
+ * battle/*.c bodies call this directly (instead of going through a
+ * named *_emu helper) to delegate a sub-routine they couldn't
+ * translate. Stubbed for now — same caveats as the *_emu stubs
+ * below. */
+__attribute__((weak)) void run_emulated_func(Snes *snes, uint32_t addr) {
+    (void)snes; (void)addr;
+}
+
 /* No-op stubs for untranslated 65816 routines. The battle
  * subsystem still runs but loses any side effect these would
  * have produced — visible as wrong damage numbers, missing AI
