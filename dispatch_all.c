@@ -94,6 +94,7 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
 
 uint32_t ff4_dispatch_hits = 0;
 uint32_t ff4_dispatch_misses = 0;
+uint32_t ff4_miss_per_bank[256] = {0};  /* count misses by bank for diagnosis */
 
 int ff4_dispatch_try(Snes *snes, uint32_t pc) {
     int lo = 0, hi = FF4_DISPATCH_COUNT - 1;
@@ -108,5 +109,6 @@ int ff4_dispatch_try(Snes *snes, uint32_t pc) {
         if (e < pc) lo = mid + 1; else hi = mid - 1;
     }
     ff4_dispatch_misses++;
+    ff4_miss_per_bank[(pc >> 16) & 0xff]++;
     return 0;
 }
