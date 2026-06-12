@@ -13,7 +13,7 @@ void EventCmd_dd_c(Snes *snes) {
     uint16_t x = 0; // ldx #0
     uint16_t y = 0; // ldy #0
 
-loop_ec49:
+loop_ec49:;
     // lda $1000,y (DP=0, so absolute $1000 + y)
     uint8_t val = ram[0x1000 + y];
     val &= 0x1F; // and #$1f
