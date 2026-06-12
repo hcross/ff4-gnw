@@ -81,6 +81,10 @@ void Cmd_0c_c(Snes *snes);
 void Cmd_08_c(Snes *snes);
 void Cmd_01_c(Snes *snes);
 void AutoBattle_0003_c(Snes *snes);
+void InitSound_ext_c(Snes *snes);
+void ExecSound_ext_c(Snes *snes);
+void PlayGameSfx_c(Snes *snes);
+void ExecInterrupt_c(Snes *snes);
 void LoadTheEndGfx_c(Snes *snes);
 void _13db10_c(Snes *snes);
 void _13db23_c(Snes *snes);
@@ -95,7 +99,7 @@ void _13ebb8_c(Snes *snes);
 void _13ef4c_c(Snes *snes);
 
 typedef struct { uint32_t pc; void (*fn)(Snes *snes); } ff4_dispatch_entry_t;
-#define FF4_DISPATCH_COUNT 89
+#define FF4_DISPATCH_COUNT 93
 extern const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT];
 int ff4_dispatch_try(Snes *snes, uint32_t pc);
 extern uint32_t ff4_dispatch_hits;

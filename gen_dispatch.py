@@ -26,6 +26,7 @@ MODULES = {
 RUNS = {
     'battle':   FF4_PORT / 'translator/runs/qwen3_validation_after_retry.jsonl',
     'cutscene': FF4_PORT / 'translator/runs/cutscene_validation_after_retry.jsonl',
+    'sound':    FF4_PORT / 'translator/runs/sound_validation.jsonl',
 }
 
 def has_standard_sig(name, mod):
@@ -87,7 +88,8 @@ with open('dispatch_all.c', 'w') as c:
         c.write(f'    {{ 0x{pc:06x}, {n}_c }},  /* {mod} */\n')
     c.write('};\n\n')
     c.write('uint32_t ff4_dispatch_hits = 0;\n')
-    c.write('uint32_t ff4_dispatch_misses = 0;\n\n')
+    c.write('uint32_t ff4_dispatch_misses = 0;\n')
+    c.write('uint32_t ff4_miss_per_bank[256] = {0};\n\n')
     c.write('int ff4_dispatch_try(Snes *snes, uint32_t pc) {\n')
     c.write('    int lo = 0, hi = FF4_DISPATCH_COUNT - 1;\n')
     c.write('    while (lo <= hi) {\n')
@@ -101,6 +103,7 @@ with open('dispatch_all.c', 'w') as c:
     c.write('        if (e < pc) lo = mid + 1; else hi = mid - 1;\n')
     c.write('    }\n')
     c.write('    ff4_dispatch_misses++;\n')
+    c.write('    ff4_miss_per_bank[(pc >> 16) & 0xff]++;\n')
     c.write('    return 0;\n')
     c.write('}\n')
 
