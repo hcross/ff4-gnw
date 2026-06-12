@@ -1,4 +1,3 @@
-/* Helpers expected by the LLM-generated battle/ and cutscene/ bodies. */
 #pragma once
 #include <stdint.h>
 #include "snes/snes.h"
@@ -32,9 +31,11 @@ void do_fight_cmd_emu(Snes *snes);
 void do_magic_attack_emu(Snes *snes);
 void do_multi_attack_emu(Snes *snes);
 void draw_solar_system_sprite_emu(Snes *snes);
+void exec_sound_emu(Snes *snes);
 void get_monster_with_status_emu(Snes *snes);
 void get_timer_ptr_emu(Snes *snes);
 void init_battle_emu(Snes *snes);
+void init_sound_emu(Snes *snes);
 void magic_dmg_effect_emu(Snes *snes);
 void mult16_emu(Snes *snes);
 void mult8_emu(Snes *snes);

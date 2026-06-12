@@ -78,6 +78,10 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x03e903, Cmd_08_c },  /* battle */
     { 0x03eba2, Cmd_01_c },  /* battle */
     { 0x03fe36, AutoBattle_0003_c },  /* battle */
+    { 0x048000, InitSound_ext_c },  /* sound */
+    { 0x048003, ExecSound_ext_c },  /* sound */
+    { 0x0485e1, PlayGameSfx_c },  /* sound */
+    { 0x04861e, ExecInterrupt_c },  /* sound */
     { 0x13d730, LoadTheEndGfx_c },  /* cutscene */
     { 0x13db10, _13db10_c },  /* cutscene */
     { 0x13db23, _13db23_c },  /* cutscene */
@@ -94,7 +98,7 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
 
 uint32_t ff4_dispatch_hits = 0;
 uint32_t ff4_dispatch_misses = 0;
-uint32_t ff4_miss_per_bank[256] = {0};  /* count misses by bank for diagnosis */
+uint32_t ff4_miss_per_bank[256] = {0};
 
 int ff4_dispatch_try(Snes *snes, uint32_t pc) {
     int lo = 0, hi = FF4_DISPATCH_COUNT - 1;

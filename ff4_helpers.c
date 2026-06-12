@@ -1,5 +1,4 @@
 #include "ff4_helpers.h"
-#include <stdio.h>
 
 uint16_t read16(const uint8_t *ram, int addr) {
     return (uint16_t)ram[addr] | ((uint16_t)ram[addr + 1] << 8);
@@ -10,12 +9,8 @@ void write16(uint8_t *ram, int addr, uint16_t v) {
     ram[addr + 1] = (uint8_t)((v >> 8) & 0xff);
 }
 
-__attribute__((weak)) void run_emulated_func(Snes *snes, uint32_t addr) {
-    (void)snes; (void)addr;
-}
+__attribute__((weak)) void run_emulated_func(Snes *snes, uint32_t addr) { (void)snes; (void)addr; }
 
-/* Weak no-op stubs for *_emu helpers. Replace with run_emulated_func
- * delegation when Phase 5.7 lands. */
 __attribute__((weak)) void ClearBit_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void ExecBtlGfx_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void ExecBtlGfx_ext_emu(Snes *snes) { (void)snes; }
@@ -41,9 +36,11 @@ __attribute__((weak)) void do_fight_cmd_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void do_magic_attack_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void do_multi_attack_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void draw_solar_system_sprite_emu(Snes *snes) { (void)snes; }
+__attribute__((weak)) void exec_sound_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void get_monster_with_status_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void get_timer_ptr_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void init_battle_emu(Snes *snes) { (void)snes; }
+__attribute__((weak)) void init_sound_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void magic_dmg_effect_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void mult16_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void mult8_emu(Snes *snes) { (void)snes; }
