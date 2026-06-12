@@ -88,3 +88,7 @@ extern const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT];
 
 /* Returns true and runs the C body if pc hits; false otherwise. */
 int ff4_dispatch_try(Snes *snes, uint32_t pc);
+
+/* Liveness counters for the host-side probe. */
+extern uint32_t ff4_dispatch_hits;
+extern uint32_t ff4_dispatch_misses;
