@@ -4,6 +4,63 @@
 #include <stdint.h>
 #include "snes/snes.h"
 
+void AfterBattle_c(Snes *snes);
+void FieldMain_c(Snes *snes);
+void InitMapRAM_c(Snes *snes);
+void LoadTitleGfx_c(Snes *snes);
+void WaitKeyUp_c(Snes *snes);
+void WaitKeyDown_c(Snes *snes);
+void TfrWaterLavaGfx_c(Snes *snes);
+void TfrLavaGfx_c(Snes *snes);
+void GiveGil_c(Snes *snes);
+void GetTreasureTiles_c(Snes *snes);
+void GetTreasurePtr_c(Snes *snes);
+void BoardChoco_c(Snes *snes);
+void CheckTilePass_c(Snes *snes);
+void ClearPlayerNPCMap_c(Snes *snes);
+void CloseYesNoWindow_c(Snes *snes);
+void ScrollItemListDown_c(Snes *snes);
+void TfrBGGfx_c(Snes *snes);
+void InitDlgIRQ_c(Snes *snes);
+void _15b8c9_c(Snes *snes);
+void _15bb6a_c(Snes *snes);
+void _00bfe3_c(Snes *snes);
+void ReloadNPCs_c(Snes *snes);
+void _15c144_c(Snes *snes);
+void _15c23d_c(Snes *snes);
+void AfterCutscene_c(Snes *snes);
+void Special_2d_c(Snes *snes);
+void _00cb05_c(Snes *snes);
+void TfrBGAnimGfx_c(Snes *snes);
+void _00cb72_c(Snes *snes);
+void Special_1d_c(Snes *snes);
+void Special_1c_c(Snes *snes);
+void Special_0d_c(Snes *snes);
+void Special_1e_c(Snes *snes);
+void IncBrightness_c(Snes *snes);
+void LoadOverworldIntro_c(Snes *snes);
+void _00de1b_c(Snes *snes);
+void _00df53_c(Snes *snes);
+void WaitVblankEvent_c(Snes *snes);
+void EventCmd_d8_c(Snes *snes);
+void EventCmd_d7_c(Snes *snes);
+void EventCmd_e0_c(Snes *snes);
+void EventCmd_e6_c(Snes *snes);
+void EventCmd_dd_c(Snes *snes);
+void SetCurrGil_c(Snes *snes);
+void EventCmd_d0_c(Snes *snes);
+void EventCmd_d1_c(Snes *snes);
+void TfrInvertPal_c(Snes *snes);
+void _14f58e_c(Snes *snes);
+void GilWindowTiles3_c(Snes *snes);
+void GilWindowTiles4_c(Snes *snes);
+void DlgTilesTop_c(Snes *snes);
+void MapTitleTilesTop_c(Snes *snes);
+void _00f922_c(Snes *snes);
+void LavaAnimPal_c(Snes *snes);
+void WipeScanlineTbl_c(Snes *snes);
+void TfrBG2Tilemap_c(Snes *snes);
+void Vectors_c(Snes *snes);
 void ExecBattle_c(Snes *snes);
 void DrawMP_c(Snes *snes);
 void ExecBtlGfx_c(Snes *snes);
@@ -99,9 +156,8 @@ void _13ebb8_c(Snes *snes);
 void _13ef4c_c(Snes *snes);
 
 typedef struct { uint32_t pc; void (*fn)(Snes *snes); } ff4_dispatch_entry_t;
-#define FF4_DISPATCH_COUNT 93
+#define FF4_DISPATCH_COUNT 150
 extern const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT];
 int ff4_dispatch_try(Snes *snes, uint32_t pc);
 extern uint32_t ff4_dispatch_hits;
 extern uint32_t ff4_dispatch_misses;
-extern uint32_t ff4_miss_per_bank[256];
