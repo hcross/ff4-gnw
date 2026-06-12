@@ -5,7 +5,7 @@
 //   in : ram[$2683-$2685] command flags, ram[$26D0-$26D5] command data
 //   out: ram[$34C7-$34C8] item display, ram[$33C5] backup item (if needed)
 //        ram[$352A] incremented if summon blocked
-static void Cmd_01_c(Snes *snes) {
+void Cmd_01_c(Snes *snes) {
     uint8_t *ram = snes->ram;
 
     // Check command flags

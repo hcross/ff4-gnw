@@ -5,7 +5,7 @@
 //   in : ram[$38FE] = damage multiplier (signed), ram[$2704] = enemy flags,
 //        ram[$352A] = some flag, ram[$26D2] = enemy ID
 //   out: modifies ram as per CalcDmg or jumps to _d416
-static void MagicDmgEffect_c(Snes *snes) {
+void MagicDmgEffect_c(Snes *snes) {
     uint8_t *ram = snes->ram;
 
     check_strong_elem_emu(snes);         // jsr CheckStrongElem

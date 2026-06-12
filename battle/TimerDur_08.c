@@ -4,7 +4,7 @@
 // All inputs/outputs in WRAM:
 //   in : ram[$397B] = base value (8-bit)
 //   out: ram[$A9..$AA] = final timer duration (16-bit)
-static void TimerDur_08_c(Snes *snes) {
+void TimerDur_08_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     uint8_t base = ram[0x397B];         // lda $397b
     ram[0xAD] = base;                   // sta $ad

@@ -2,7 +2,7 @@
 
 // Sets twin failure flags and invokes AddMsg2 to display a message.
 // No conditional logic or register inputs — fully deterministic.
-static void TwinFailed_c(Snes *snes) {
+void TwinFailed_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     ram[0x357B] = 0xFF;  // lda #$ff / sta $357b
     ram[0x34CA] = 0x11;  // lda #$11 / sta $34ca

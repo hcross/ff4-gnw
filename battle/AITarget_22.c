@@ -3,7 +3,7 @@
 // Entry mode: A 8-bit (mf=1), X 16-bit (xf=0), DB=$7E, DP=0
 // This function sets up fixed values in RAM and jumps to RandAITarget.
 // It behaves as a thunk that initializes $af, $b0, and $ad before delegation.
-static void AITarget_22_c(Snes *snes) {
+void AITarget_22_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     ram[0xB0] = 0x0C;  // lda #$0c / sta $b0
     ram[0xAF] = 0x00;  // lda #$00 / sta $af

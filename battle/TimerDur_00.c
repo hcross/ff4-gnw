@@ -6,7 +6,7 @@
 //   out: ram[$AB] (final timer duration, >= 1)
 // CALLER MUST ensure Z flag reflects the pre-call value of $AB,
 // because the routine starts with `bne` (consults Z).
-static void TimerDur_00_c(Snes *snes) {
+void TimerDur_00_c(Snes *snes) {
     apply_speed_mod_emu(snes);      // jsr ApplySpeedMod
     uint8_t ab = snes->ram[0xAB];
     if (ab == 0) {                  // bne @9e6e → taken if $ab != 0

@@ -3,7 +3,7 @@
 // This function sets up AI targeting parameters and jumps to RandAITarget.
 // Entry mode: A 8-bit (mf=1), X 16-bit (xf=0), DB=$7E, DP=0
 // No input registers are used. All values are written to RAM directly.
-static void AITarget_24_c(Snes *snes) {
+void AITarget_24_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     ram[0xAF] = 0x05;
     ram[0xB0] = 0x0C;

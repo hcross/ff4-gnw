@@ -4,7 +4,7 @@
 // delegates to RandAITarget to select a target.
 // Entry mode: A 8-bit (inherited), X 16-bit (inherited), DB=$7E, DP=0
 // No input registers; all inputs/outputs in WRAM.
-static void AITarget_23_c(Snes *snes) {
+void AITarget_23_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     ram[0xAF] = 0;      // sta $af
     ram[0xB0] = 0x0C;   // sta $b0

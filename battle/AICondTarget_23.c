@@ -3,7 +3,7 @@
 // Entry mode: A 8-bit (mf=1), X 16-bit (xf=0), DB=$7E, DP=0
 // No inputs in registers. All state passed via WRAM.
 // This function calls two subroutines unconditionally.
-static void AICondTarget_23_c(Snes *snes) {
+void AICondTarget_23_c(Snes *snes) {
     target_monster_emu(snes);   // jsr TargetMonster
     no_self_target_emu(snes);   // jmp NoSelfTarget (tail call)
 }

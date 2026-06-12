@@ -3,7 +3,7 @@
 // Sets $ab to 2, then jumps to TargetMonsterType.
 // Entry mode: A 8-bit (inherited), X 16-bit (inherited), DB=$7E, DP=0
 // No flags or registers are significant on entry.
-static void AICondTarget_27_c(Snes *snes) {
+void AICondTarget_27_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     ram[0xAB] = 2;              // lda #$02 / sta $ab
     target_monster_type_emu(snes); // jmp TargetMonsterType

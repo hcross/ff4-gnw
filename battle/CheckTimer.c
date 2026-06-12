@@ -3,7 +3,7 @@
 // Entry mode: A 8-bit (mf=1), X 16-bit (xf=0), DB=$7E, DP=0
 // This function checks a timer and sets a flag if a pending action should occur.
 // It reads from WRAM and calls two helper functions to select an object and get a timer pointer.
-static void CheckTimer_c(Snes *snes) {
+void CheckTimer_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     Cpu *cpu = snes->cpu;
 

@@ -5,7 +5,7 @@
 // Calls two sub-routines:
 //   MagicDmgEffect — applies damage
 //   SetMagicStatus2 — applies status effect (tail call)
-static void MagicEffect_28_c(Snes *snes) {
+void MagicEffect_28_c(Snes *snes) {
     magic_dmg_effect_emu(snes);  // jsr MagicDmgEffect
     set_magic_status2_emu(snes); // jmp SetMagicStatus2 (tail call)
 }

@@ -5,7 +5,7 @@
 //   in : ram[$29CD] counter
 //   out: ram[$AF] = 5, ram[$B0] = 12, ram[$AD] = ram[$D2]
 //        OR jump to SkipAITurn/RandAITarget (no return)
-static void AITarget_25_c(Snes *snes) {
+void AITarget_25_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     uint8_t counter = ram[0x29CD];
     if ((counter - 1) != 0) {     // dec / bne → if (counter != 1)

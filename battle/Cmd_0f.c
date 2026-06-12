@@ -2,7 +2,7 @@
 
 // Sets up a barrier spell (armor) and performs a magic attack.
 // Always displays "no effect" message afterward.
-static void Cmd_0f_c(Snes *snes) {
+void Cmd_0f_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     ram[0x26D2] = 0x05;  // barrier spell type
     ram[0x33C4] = 0;     // clear some state

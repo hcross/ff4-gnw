@@ -4,7 +4,7 @@
 // All inputs/outputs in WRAM:
 //   in : ram[$16A8] = row setting
 //   out: ram[$2001], ram[$2081], ram[$2101], ram[$2181], ram[$2201] updated
-static void InitCharRows_c(Snes *snes) {
+void InitCharRows_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     uint8_t row_setting = ram[0x16A8];
 

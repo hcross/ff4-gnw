@@ -3,7 +3,7 @@
 // This function is a far call wrapper that sets up the environment for UpdateEquip.
 // It saves all registers and CPU state, switches to native mode with 16-bit A and I,
 // sets up the data bank to $7E, calls UpdateEquip, then restores everything.
-static void UpdateEquip_far_c(Snes *snes, uint16_t a) {
+void UpdateEquip_far_c(Snes *snes, uint16_t a) {
     Cpu *cpu = snes->cpu;
     uint8_t *ram = snes->ram;
     

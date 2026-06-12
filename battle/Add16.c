@@ -3,7 +3,7 @@
 // 16-bit addition with carry propagation: $395A = $3956 + $3958, $395C = carry
 // Entry mode: A 16-bit (mf=0), X 16-bit (xf=0), DB=$7E, DP=0
 // All operands and results in WRAM
-static void Add16_c(Snes *snes) {
+void Add16_c(Snes *snes) {
     uint8_t *ram = snes->ram;
 
     uint16_t a = read16(ram, 0x3956);  // lda $3956

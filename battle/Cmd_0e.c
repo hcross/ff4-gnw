@@ -2,7 +2,7 @@
 
 // This function initializes $C1 to 0 and jumps to DoMultiAttack.
 // It's a command handler that clears a flag before proceeding.
-static void Cmd_0e_c(Snes *snes) {
+void Cmd_0e_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     ram[0xC1] = 0;              // stz $c1
     do_multi_attack_emu(snes);  // jmp DoMultiAttack

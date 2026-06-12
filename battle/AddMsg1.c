@@ -2,7 +2,7 @@
 
 // Sets up a battle message to display "1" (likely for item usage or single target)
 // by writing the message type and index to the message buffer.
-static void AddMsg1_c(Snes *snes) {
+void AddMsg1_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     ram[0x33C2] = 0xF8;  // message index for displaying "1"
     ram[0x33C3] = 0x03;  // message type: battle message

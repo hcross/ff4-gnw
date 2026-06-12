@@ -3,7 +3,7 @@
 // Scans a battle list (indirect pointer at $AB) for a match against
 // the 16-bit value at $1800-$1801. Increments $A9 if found.
 // Entry mode: A 8-bit (mf=1), X/Y 16-bit (xf=0), DB=$7E, DP=0
-static void CheckBattleList_c(Snes *snes) {
+void CheckBattleList_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     ram[0xA9] = 0;                    // stz $a9
     uint16_t y = 0;                   // clr_ay (A=Y=0, A is 8-bit so Y=0)

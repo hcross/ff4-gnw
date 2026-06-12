@@ -8,7 +8,7 @@
 //   out: ram[$272A] = incremented value (capped at $FF)
 //   conditional: if ram[$272A] == $FF → RemoveTarget is called
 //                if battle == $01B7 (zeromus) → no increment
-static void MagicEffect_0d_c(Snes *snes) {
+void MagicEffect_0d_c(Snes *snes) {
     uint8_t *ram = snes->ram;
 
     if (ram[0x272A] == 0xFF) {           // lda $272a / cmp #$ff / bne

@@ -3,7 +3,7 @@
 // This function initializes a 32-bit value at $AD-$B0 to 1 and then
 // jumps to GetMonsterWithStatus. The purpose is to set up a search
 // criterion for a monster with a specific status (value 1).
-static void AITarget_21_c(Snes *snes) {
+void AITarget_21_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     ram[0xAD] = 0;  // stz $ad
     ram[0xAE] = 1;  // lda #$01 / sta $ae

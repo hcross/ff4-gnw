@@ -2,7 +2,7 @@
 
 // Entry mode: A 8-bit (mf=1), X 16-bit (xf=0), DB=$7E, DP=0
 // This function unconditionally sets ram[$357C] to 0xFF and returns.
-static void Cmd_22_c(Snes *snes) {
+void Cmd_22_c(Snes *snes) {
     snes->ram[0x357C] = 0xFF;
 }
 

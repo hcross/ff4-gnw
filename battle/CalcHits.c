@@ -4,7 +4,7 @@
 // All inputs/outputs in WRAM (no register I/O — convention battle):
 //   in : ram[$38FB] base_hits, ram[$38FA] hit_rate
 //   out: ram[$38FD] = number of hits
-static void CalcHits_c(Snes *snes) {
+void CalcHits_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     ram[0x38FD] = 0;                // stz $38fd
     uint8_t base = ram[0x38FB];     // lda $38fb

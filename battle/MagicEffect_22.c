@@ -3,7 +3,7 @@
 // Entry mode: A 8-bit (mf=1), X 16-bit (xf=0), DB=$7E, DP=0
 // No input registers; all state is internal or in WRAM
 // Output: writes to $28A3 or $28A4, then jumps to effect handlers
-static void MagicEffect_22_c(Snes *snes) {
+void MagicEffect_22_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     snes->cpu->x = 0;                  // ldx #0
     snes->cpu->a = 2;                  // lda #2

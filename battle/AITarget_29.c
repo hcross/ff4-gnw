@@ -2,7 +2,7 @@
 
 // This function initializes targeting flags for a monster with a specific status.
 // It sets up a bitfield in $ad-$b0 and then jumps to GetMonsterWithStatus.
-static void AITarget_29_c(Snes *snes) {
+void AITarget_29_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     
     ram[0xAD] = 0;  // stz $ad

@@ -9,7 +9,7 @@
 //   if mult == 0     : damage = 0
 //   if mult == 1     : damage >>= 1
 //   else (mult > 1)  : damage = (mult >> 1) * damage  (truncated to 16-bit)
-static void ApplyDmgMult_c(Snes *snes, uint8_t mult) {
+void ApplyDmgMult_c(Snes *snes, uint8_t mult) {
     uint8_t *ram = snes->ram;
 
     if (mult == 0) {                     // bne @ca48 → not taken

@@ -5,7 +5,7 @@
 // Output: none (CalcDmg writes to $3902-$3903 and processes damage)
 // This function computes (base_value * 2) and stores it in $3902-$3903,
 // then jumps to CalcDmg to process the damage calculation.
-static void MagicEffect_2b_c(Snes *snes) {
+void MagicEffect_2b_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     uint8_t base = ram[0x269D];         // lda $269d
     uint16_t val = (uint16_t)base;      // tax (zero-extend to 16-bit)

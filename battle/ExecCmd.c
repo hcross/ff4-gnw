@@ -7,7 +7,7 @@
 //   out: ram[$35FF] = retaliation command
 //        ram[$33C2-$33C5] = graphics script (if character)
 //        [$80-$82] = jump target (24-bit pointer)
-static void ExecCmd_c(Snes *snes) {
+void ExecCmd_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     uint8_t a = ram[0xD2];           // lda $d2
 

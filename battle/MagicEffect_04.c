@@ -13,7 +13,7 @@
 //     }
 //   }
 //   return
-static void MagicEffect_04_c(Snes *snes) {
+void MagicEffect_04_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     if (ram[0xCD] == ram[0xCE]) return; // beq @d487
     calc_dmg_emu(snes);                 // jsr CalcDmg

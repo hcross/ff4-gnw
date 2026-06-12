@@ -3,7 +3,7 @@
 // Entry mode: A 8-bit (mf=1), X 16-bit (xf=0), DB=$7E, DP=0
 // This function saves $269C and $2729, sets them to specific values,
 // calls DoFightCmd, then restores the original values.
-static void Cmd_0c_c(Snes *snes) {
+void Cmd_0c_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     // Save original values
     uint8_t saved_269c = ram[0x269C];

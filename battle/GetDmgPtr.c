@@ -8,7 +8,7 @@
 //   else:
 //     index = (target & 0x7F) + 5, then index *= 2
 // Output: X = index * 2 (16-bit), used as offset into party/enemy arrays
-static void GetDmgPtr_c(Snes *snes, uint8_t target) {
+void GetDmgPtr_c(Snes *snes, uint8_t target) {
     uint8_t *ram = snes->ram;
     ram[0xA9] = target;              // sta $a9
     uint8_t a = target;

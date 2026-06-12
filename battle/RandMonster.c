@@ -2,7 +2,7 @@
 
 // Entry mode: A 8-bit (inherited mf=1), X 16-bit (inherited xf=0)
 // No input registers; returns random monster index in A (0-6)
-static void RandMonster_c(Snes *snes) {
+void RandMonster_c(Snes *snes) {
     Cpu *cpu = snes->cpu;
     cpu->x = 0;
     cpu->a = 7;

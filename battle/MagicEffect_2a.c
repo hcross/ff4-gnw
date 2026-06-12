@@ -5,7 +5,7 @@
 //   in : ram[$2704] and ram[$2706] (status bytes), $273b (target byte)
 //   out: ram[$a9] = original $2704, ram[$2704] and ram[$2706] masked,
 //        ram[$273b] = 0x10
-static void MagicEffect_2a_c(Snes *snes) {
+void MagicEffect_2a_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     uint8_t temp = ram[0x2704];       // lda $2704
     ram[0xA9] = temp;                 // sta $a9

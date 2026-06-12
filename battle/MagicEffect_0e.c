@@ -4,7 +4,7 @@
 // All inputs/outputs in WRAM:
 //   in : ram[$2724] (1 byte, base mag.def), ram[$1800]-$1801 (battle id)
 //   out: ram[$2724] updated or target removed
-static void MagicEffect_0e_c(Snes *snes) {
+void MagicEffect_0e_c(Snes *snes) {
     uint8_t *ram = snes->ram;
 
     uint8_t mag_def = ram[0x2724];

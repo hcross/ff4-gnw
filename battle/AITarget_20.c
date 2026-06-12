@@ -5,7 +5,7 @@
 // that looks for a monster with a specific status (indicated by the preset
 // values in $ad-$b0).
 
-static void AITarget_20_c(Snes *snes) {
+void AITarget_20_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     
     ram[0xAD] = 0x08;  // Set $ad to 8

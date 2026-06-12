@@ -6,7 +6,7 @@
 //
 // Entry mode: A 8-bit (mf=1), X 16-bit (xf=0), DB=$7E, DP=0
 // All state in WRAM; no register inputs or outputs.
-static void GetPendingAction_c(Snes *snes) {
+void GetPendingAction_c(Snes *snes) {
     uint8_t *ram = snes->ram;
 
     ram[0xD1] = 0;  // disable pending action

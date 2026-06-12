@@ -9,7 +9,7 @@
 //
 // Entry mode: A 8-bit (mf=1), X 16-bit (xf=0), DB=$7E, DP=0
 // No input registers; all state passed via WRAM.
-static void AITarget_1f_c(Snes *snes) {
+void AITarget_1f_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     ram[0xAD] = 0x10;
     ram[0xAE] = 0x00;

@@ -5,7 +5,7 @@
 // Entry mode: A 8-bit (inherited mf=1), X 16-bit (inherited xf=0)
 // No inputs from registers; all state is set internally.
 // Output is in RAM at $AD-$B0 (status flags for targeting)
-static void AITarget_1e_c(Snes *snes) {
+void AITarget_1e_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     ram[0xAD] = 0x20;  // Set specific status flag for targeting
     ram[0xAE] = 0;     // Clear other status flags

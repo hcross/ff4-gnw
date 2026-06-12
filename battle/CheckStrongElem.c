@@ -6,7 +6,7 @@
 //        ram[$2726] = strong element flags
 //        ram[$28A2] = attack element flags
 //   out: ram[$38FE] = damage multiplier code
-static void CheckStrongElem_c(Snes *snes) {
+void CheckStrongElem_c(Snes *snes) {
     uint8_t *ram = snes->ram;
 
     uint8_t strong = ram[0x2726];

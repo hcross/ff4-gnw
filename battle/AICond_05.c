@@ -3,7 +3,7 @@
 // Entry mode: A 8-bit (mf=1), X 16-bit (xf=0), DB=$7E, DP=0
 // Compares two 16-bit values in RAM and increments $de if they match.
 //   if (ram[$289e:$289f] == ram[$1801:$1800]) ram[$de]++;
-static void AICond_05_c(Snes *snes) {
+void AICond_05_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     // Compare bytes at $289e and $1801
     if (ram[0x289e] != ram[0x1801]) return;  // bne @be30

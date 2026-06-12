@@ -7,7 +7,7 @@
 //        ram[$26D2] = spell_id_hi
 //        ram[$34C8] = command name (0x08)
 //        ram[$34C7] = show command name flag (0x10)
-static void Cmd_08_c(Snes *snes) {
+void Cmd_08_c(Snes *snes) {
     uint8_t *ram = snes->ram;
 
     // Check bit 0x20 of $2683

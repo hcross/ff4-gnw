@@ -6,7 +6,7 @@
 //   ram[$3979] = multiplier (16-bit)
 // Output:
 //   ram[$AB] = modified duration (16-bit)
-static void ApplySpeedMod_c(Snes *snes) {
+void ApplySpeedMod_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     uint16_t base = read16(ram, 0xA9);
     uint16_t mult = read16(ram, 0x3979);

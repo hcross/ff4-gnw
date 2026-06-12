@@ -2,7 +2,7 @@
 
 // Toggles a flag and conditionally draws MP if the flag is zero.
 // Uses a frame counter to control drawing rate.
-static void DrawMP_c(Snes *snes) {
+void DrawMP_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     ram[0x353E] ^= 1;              // lda $353e / eor #1 / sta $353e
     if (ram[0x353E] != 0) return;  // bne @8084
