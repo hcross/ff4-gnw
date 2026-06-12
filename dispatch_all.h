@@ -1,5 +1,5 @@
-/* Auto-generated dispatch table — FF4 battle PASS routines.
- * Source: hcross/ff4-port qwen3_validation_after_retry.jsonl */
+/* Auto-generated dispatch table for FF4 native-C bodies.
+ * Re-run gen_dispatch.py whenever a translator run finishes. */
 #pragma once
 #include <stdint.h>
 #include "snes/snes.h"
@@ -81,14 +81,22 @@ void Cmd_0c_c(Snes *snes);
 void Cmd_08_c(Snes *snes);
 void Cmd_01_c(Snes *snes);
 void AutoBattle_0003_c(Snes *snes);
+void LoadTheEndGfx_c(Snes *snes);
+void _13db10_c(Snes *snes);
+void _13db23_c(Snes *snes);
+void _13e07d_c(Snes *snes);
+void GetEarthSpritePos_c(Snes *snes);
+void InitStars_c(Snes *snes);
+void GetOtherPlanetTile_c(Snes *snes);
+void Mult16_1_c(Snes *snes);
+void NewLine_c(Snes *snes);
+void _13eb60_c(Snes *snes);
+void _13ebb8_c(Snes *snes);
+void _13ef4c_c(Snes *snes);
 
 typedef struct { uint32_t pc; void (*fn)(Snes *snes); } ff4_dispatch_entry_t;
-#define FF4_DISPATCH_COUNT 77
+#define FF4_DISPATCH_COUNT 89
 extern const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT];
-
-/* Returns true and runs the C body if pc hits; false otherwise. */
 int ff4_dispatch_try(Snes *snes, uint32_t pc);
-
-/* Liveness counters for the host-side probe. */
 extern uint32_t ff4_dispatch_hits;
 extern uint32_t ff4_dispatch_misses;
