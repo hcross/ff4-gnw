@@ -44,6 +44,7 @@ __attribute__((weak)) void check_player_move_world_emu(Snes *snes) { (void)snes;
 __attribute__((weak)) void check_strong_elem_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void check_timer_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void check_weak_elem_emu(Snes *snes) { (void)snes; }
+__attribute__((weak)) void clear_text_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void div16_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void do_fight_cmd_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void do_magic_attack_emu(Snes *snes) { (void)snes; }
@@ -57,6 +58,7 @@ __attribute__((weak)) void get_next_event_byte_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void get_timer_ptr_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void give_item_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void init_battle_emu(Snes *snes) { (void)snes; }
+__attribute__((weak)) void init_ctrl_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void init_sound_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void load_overworld_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void magic_dmg_effect_emu(Snes *snes) { (void)snes; }
@@ -78,7 +80,10 @@ __attribute__((weak)) void target_monster_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void target_monster_type_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void tfr_lava_gfx_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void tfr_water_gfx_emu(Snes *snes) { (void)snes; }
+__attribute__((weak)) void update_ctrl_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void update_equip_emu(Snes *snes) { (void)snes; }
+__attribute__((weak)) void update_scroll_regs_emu(Snes *snes) { (void)snes; }
+__attribute__((weak)) void update_window_color_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void update_zoom_pal_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void wait_frame_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void wait_vblank_event_emu(Snes *snes) { (void)snes; }
