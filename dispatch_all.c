@@ -135,6 +135,8 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x14fd06, ClearText_ext_c },  /* menu */
     { 0x14fd09, UpdateWindowColor_ext_c },  /* menu */
     { 0x14fd0c, UpdateScrollRegs_ext_c },  /* menu */
+    { 0x1585ab, InitWorld_c },  /* field */
+    { 0x1589ed, InitInterrupts_c },  /* field */
     { 0x158dfc, WaitKeyUp_c },  /* field */
     { 0x158e05, WaitKeyDown_c },  /* field */
     { 0x158e57, TfrWaterLavaGfx_c },  /* field */
@@ -221,3 +223,6 @@ __attribute__((weak)) void fade_out_menu_emu(Snes *snes) { (void)snes; }  /* fir
 __attribute__((weak)) void main_menu_emu(Snes *snes) { (void)snes; }  /* first needed by field/CheckMenu.c */
 __attribute__((weak)) void fade_in_menu_emu(Snes *snes) { (void)snes; }  /* first needed by field/CheckMenu.c */
 __attribute__((weak)) void exec_event_emu(Snes *snes) { (void)snes; }  /* first needed by field/CheckMenu.c */
+__attribute__((weak)) void remove_float_emu(Snes *snes) { (void)snes; }  /* first needed by field/InitWorld.c */
+__attribute__((weak)) void tfr_world_gfx_emu(Snes *snes) { (void)snes; }  /* first needed by field/InitWorld.c */
+__attribute__((weak)) void invert_pal_emu(Snes *snes) { (void)snes; }  /* first needed by field/InitWorld.c */
