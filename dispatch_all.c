@@ -96,6 +96,7 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x04861e, ExecInterrupt_c },  /* sound */
     { 0x088690, LoadTitleGfx_c },  /* field */
     { 0x12e35b, WaitVblankEvent_c },  /* field */
+    { 0x12e55a, FindEventTerminator_c },  /* field */
     { 0x12e613, EventCmd_d8_c },  /* field */
     { 0x12e7d3, EventCmd_d7_c },  /* field */
     { 0x12eb47, EventCmd_e0_c },  /* field */
