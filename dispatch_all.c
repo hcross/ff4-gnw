@@ -137,6 +137,7 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x14fd0c, UpdateScrollRegs_ext_c },  /* menu */
     { 0x1585ab, InitWorld_c },  /* field */
     { 0x1589ed, InitInterrupts_c },  /* field */
+    { 0x158b2a, InitDMA_c },  /* field */
     { 0x158dfc, WaitKeyUp_c },  /* field */
     { 0x158e05, WaitKeyDown_c },  /* field */
     { 0x158e57, TfrWaterLavaGfx_c },  /* field */
