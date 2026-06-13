@@ -142,6 +142,7 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x158d5d, PlayMapSong_c },  /* field */
     { 0x158dfc, WaitKeyUp_c },  /* field */
     { 0x158e05, WaitKeyDown_c },  /* field */
+    { 0x158e47, UpdateWaterLavaAnim_c },  /* field */
     { 0x158e57, TfrWaterLavaGfx_c },  /* field */
     { 0x158f34, TfrLavaGfx_c },  /* field */
     { 0x1599fb, GiveGil_c },  /* field */
@@ -230,3 +231,5 @@ __attribute__((weak)) void fadein_emu(Snes *snes) { (void)snes; }  /* first need
 __attribute__((weak)) void remove_float_emu(Snes *snes) { (void)snes; }  /* first needed by field/InitWorld.c */
 __attribute__((weak)) void tfr_world_gfx_emu(Snes *snes) { (void)snes; }  /* first needed by field/InitWorld.c */
 __attribute__((weak)) void invert_pal_emu(Snes *snes) { (void)snes; }  /* first needed by field/InitWorld.c */
+__attribute__((weak)) void update_lava_anim_emu(Snes *snes) { (void)snes; }  /* first needed by field/UpdateWaterLavaAnim.c */
+__attribute__((weak)) void update_water_anim_emu(Snes *snes) { (void)snes; }  /* first needed by field/UpdateWaterLavaAnim.c */
