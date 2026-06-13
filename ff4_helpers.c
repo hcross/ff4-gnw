@@ -55,9 +55,11 @@ __attribute__((weak)) void exec_sound_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void fade_out_song_slow_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void get_monster_with_status_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void get_next_event_byte_emu(Snes *snes) { (void)snes; }
+__attribute__((weak)) void get_tile_prop_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void get_timer_ptr_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void give_item_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void init_battle_emu(Snes *snes) { (void)snes; }
+__attribute__((weak)) void init_char_prop_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void init_ctrl_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void init_sound_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void load_overworld_emu(Snes *snes) { (void)snes; }
@@ -80,6 +82,7 @@ __attribute__((weak)) void target_monster_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void target_monster_type_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void tfr_lava_gfx_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void tfr_water_gfx_emu(Snes *snes) { (void)snes; }
+__attribute__((weak)) void update_ctrl_field_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void update_ctrl_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void update_equip_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void update_scroll_regs_emu(Snes *snes) { (void)snes; }
