@@ -16,6 +16,7 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x00ffbc, InitCharProp_ext_c },  /* field */
     { 0x00ffe0, Vectors_c },  /* field */
     { 0x018010, UpdateCtrlField_ext_c },  /* menu */
+    { 0x01ca85, TfrVRAM_c },  /* field */
     { 0x01d718, FadeIn_c },  /* field */
     { 0x01dfd2, LoadBattleSpeedPosText_c },  /* menu */
     { 0x038009, ExecBattle_c },  /* battle */
@@ -95,6 +96,7 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x03e839, Cmd_0c_c },  /* battle */
     { 0x03e903, Cmd_08_c },  /* battle */
     { 0x03eba2, Cmd_01_c },  /* battle */
+    { 0x03fe03, TfrSprites_c },  /* field */
     { 0x0485e1, PlayGameSfx_c },  /* sound */
     { 0x04861e, ExecInterrupt_c },  /* sound */
     { 0x088690, LoadTitleGfx_c },  /* field */
