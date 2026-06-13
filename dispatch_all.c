@@ -11,10 +11,14 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x00c144, _15c144_c },  /* field */
     { 0x00c3bd, UpdateWhalePal_c },  /* field */
     { 0x00cb5f, TfrBGAnimGfx_c },  /* field */
+    { 0x00ffbc, InitCharProp_ext_c },  /* field */
     { 0x00ffe0, Vectors_c },  /* field */
+    { 0x018010, UpdateCtrlField_ext_c },  /* menu */
+    { 0x01dfd2, LoadBattleSpeedPosText_c },  /* menu */
     { 0x038009, ExecBattle_c },  /* battle */
     { 0x03805f, DrawMP_c },  /* battle */
     { 0x038085, ExecBtlGfx_c },  /* battle */
+    { 0x0382cb, InitHWRegs_c },  /* field */
     { 0x0383b9, Mult16_c },  /* battle */
     { 0x038407, Div16_c },  /* battle */
     { 0x0384e3, Add16_c },  /* battle */
@@ -155,6 +159,7 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x16df53, _00df53_c },  /* field */
     { 0x16f922, _00f922_c },  /* field */
     { 0x16fb93, TfrBG2Tilemap_c },  /* field */
+    { 0x1e9f6c, UpdateLocalTiles_c },  /* field */
     { 0x1ea03e, BoardChoco_c },  /* field */
 };
 
