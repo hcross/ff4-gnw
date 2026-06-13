@@ -19,6 +19,7 @@ void TfrBGAnimGfx_c(Snes *snes);
 void InitCharProp_ext_c(Snes *snes);
 void Vectors_c(Snes *snes);
 void UpdateCtrlField_ext_c(Snes *snes);
+void TfrVRAM_c(Snes *snes);
 void FadeIn_c(Snes *snes);
 void LoadBattleSpeedPosText_c(Snes *snes);
 void ExecBattle_c(Snes *snes);
@@ -98,6 +99,7 @@ void Cmd_0e_c(Snes *snes);
 void Cmd_0c_c(Snes *snes);
 void Cmd_08_c(Snes *snes);
 void Cmd_01_c(Snes *snes);
+void TfrSprites_c(Snes *snes);
 void PlayGameSfx_c(Snes *snes);
 void ExecInterrupt_c(Snes *snes);
 void LoadTitleGfx_c(Snes *snes);
@@ -182,7 +184,7 @@ void UpdateLocalTiles_c(Snes *snes);
 void BoardChoco_c(Snes *snes);
 
 typedef struct { uint32_t pc; void (*fn)(Snes *snes); } ff4_dispatch_entry_t;
-#define FF4_DISPATCH_COUNT 176
+#define FF4_DISPATCH_COUNT 178
 extern const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT];
 int ff4_dispatch_try(Snes *snes, uint32_t pc);
 extern uint32_t ff4_dispatch_hits;
