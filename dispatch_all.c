@@ -4,59 +4,12 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x00808e, AfterBattle_c },  /* field */
     { 0x0080a0, FieldMain_c },  /* field */
     { 0x00834e, InitMapRAM_c },  /* field */
-    { 0x008690, LoadTitleGfx_c },  /* field */
-    { 0x008dfc, WaitKeyUp_c },  /* field */
-    { 0x008e05, WaitKeyDown_c },  /* field */
-    { 0x008e57, TfrWaterLavaGfx_c },  /* field */
-    { 0x008f34, TfrLavaGfx_c },  /* field */
-    { 0x0099fb, GiveGil_c },  /* field */
-    { 0x009ae9, GetTreasureTiles_c },  /* field */
-    { 0x009b5b, GetTreasurePtr_c },  /* field */
-    { 0x00a03e, BoardChoco_c },  /* field */
     { 0x00aa58, CheckTilePass_c },  /* field */
     { 0x00ab13, ClearPlayerNPCMap_c },  /* field */
-    { 0x00af24, CloseYesNoWindow_c },  /* field */
-    { 0x00b09c, ScrollItemListDown_c },  /* field */
-    { 0x00b143, TfrBGGfx_c },  /* field */
-    { 0x00b6f1, InitDlgIRQ_c },  /* field */
     { 0x00b8c9, _15b8c9_c },  /* field */
     { 0x00bb6a, _15bb6a_c },  /* field */
-    { 0x00bfe3, _00bfe3_c },  /* field */
-    { 0x00c11f, ReloadNPCs_c },  /* field */
     { 0x00c144, _15c144_c },  /* field */
-    { 0x00c23d, _15c23d_c },  /* field */
-    { 0x00c59a, AfterCutscene_c },  /* field */
-    { 0x00c8bc, Special_2d_c },  /* field */
-    { 0x00cb05, _00cb05_c },  /* field */
     { 0x00cb5f, TfrBGAnimGfx_c },  /* field */
-    { 0x00cb72, _00cb72_c },  /* field */
-    { 0x00cfc4, Special_1d_c },  /* field */
-    { 0x00cfd0, Special_1c_c },  /* field */
-    { 0x00d342, Special_0d_c },  /* field */
-    { 0x00d831, Special_1e_c },  /* field */
-    { 0x00dbbe, IncBrightness_c },  /* field */
-    { 0x00dbd2, LoadOverworldIntro_c },  /* field */
-    { 0x00de1b, _00de1b_c },  /* field */
-    { 0x00df53, _00df53_c },  /* field */
-    { 0x00e35b, WaitVblankEvent_c },  /* field */
-    { 0x00e613, EventCmd_d8_c },  /* field */
-    { 0x00e7d3, EventCmd_d7_c },  /* field */
-    { 0x00eb47, EventCmd_e0_c },  /* field */
-    { 0x00ec06, EventCmd_e6_c },  /* field */
-    { 0x00ec3e, EventCmd_dd_c },  /* field */
-    { 0x00ed1d, SetCurrGil_c },  /* field */
-    { 0x00ee1c, EventCmd_d0_c },  /* field */
-    { 0x00ee25, EventCmd_d1_c },  /* field */
-    { 0x00ee35, TfrInvertPal_c },  /* field */
-    { 0x00f58e, _14f58e_c },  /* field */
-    { 0x00f626, GilWindowTiles3_c },  /* field */
-    { 0x00f63e, GilWindowTiles4_c },  /* field */
-    { 0x00f6d6, DlgTilesTop_c },  /* field */
-    { 0x00f796, MapTitleTilesTop_c },  /* field */
-    { 0x00f922, _00f922_c },  /* field */
-    { 0x00fa16, LavaAnimPal_c },  /* field */
-    { 0x00fb1e, WipeScanlineTbl_c },  /* field */
-    { 0x00fb93, TfrBG2Tilemap_c },  /* field */
     { 0x00ffe0, Vectors_c },  /* field */
     { 0x038009, ExecBattle_c },  /* battle */
     { 0x03805f, DrawMP_c },  /* battle */
@@ -134,11 +87,23 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x03e839, Cmd_0c_c },  /* battle */
     { 0x03e903, Cmd_08_c },  /* battle */
     { 0x03eba2, Cmd_01_c },  /* battle */
-    { 0x03fe36, AutoBattle_0003_c },  /* battle */
     { 0x048000, InitSound_ext_c },  /* sound */
     { 0x048003, ExecSound_ext_c },  /* sound */
     { 0x0485e1, PlayGameSfx_c },  /* sound */
     { 0x04861e, ExecInterrupt_c },  /* sound */
+    { 0x088690, LoadTitleGfx_c },  /* field */
+    { 0x12e35b, WaitVblankEvent_c },  /* field */
+    { 0x12e613, EventCmd_d8_c },  /* field */
+    { 0x12e7d3, EventCmd_d7_c },  /* field */
+    { 0x12eb47, EventCmd_e0_c },  /* field */
+    { 0x12ec06, EventCmd_e6_c },  /* field */
+    { 0x12ec3e, EventCmd_dd_c },  /* field */
+    { 0x12ed1d, SetCurrGil_c },  /* field */
+    { 0x12ee1c, EventCmd_d0_c },  /* field */
+    { 0x12ee25, EventCmd_d1_c },  /* field */
+    { 0x12ee35, TfrInvertPal_c },  /* field */
+    { 0x13bfe3, _00bfe3_c },  /* field */
+    { 0x13c11f, ReloadNPCs_c },  /* field */
     { 0x13d730, LoadTheEndGfx_c },  /* cutscene */
     { 0x13db10, _13db10_c },  /* cutscene */
     { 0x13db23, _13db23_c },  /* cutscene */
@@ -151,6 +116,47 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x13eb60, _13eb60_c },  /* cutscene */
     { 0x13ebb8, _13ebb8_c },  /* cutscene */
     { 0x13ef4c, _13ef4c_c },  /* cutscene */
+    { 0x13fe36, AutoBattle_0003_c },  /* battle */
+    { 0x14f58e, _14f58e_c },  /* field */
+    { 0x14f626, GilWindowTiles3_c },  /* field */
+    { 0x14f63e, GilWindowTiles4_c },  /* field */
+    { 0x14f6d6, DlgTilesTop_c },  /* field */
+    { 0x14f796, MapTitleTilesTop_c },  /* field */
+    { 0x14fa16, LavaAnimPal_c },  /* field */
+    { 0x14fb1e, WipeScanlineTbl_c },  /* field */
+    { 0x14fd00, InitCtrl_ext2_c },  /* menu */
+    { 0x14fd03, UpdateCtrl_ext_c },  /* menu */
+    { 0x14fd06, ClearText_ext_c },  /* menu */
+    { 0x14fd09, UpdateWindowColor_ext_c },  /* menu */
+    { 0x14fd0c, UpdateScrollRegs_ext_c },  /* menu */
+    { 0x158dfc, WaitKeyUp_c },  /* field */
+    { 0x158e05, WaitKeyDown_c },  /* field */
+    { 0x158e57, TfrWaterLavaGfx_c },  /* field */
+    { 0x158f34, TfrLavaGfx_c },  /* field */
+    { 0x1599fb, GiveGil_c },  /* field */
+    { 0x159ae9, GetTreasureTiles_c },  /* field */
+    { 0x159b5b, GetTreasurePtr_c },  /* field */
+    { 0x15af24, CloseYesNoWindow_c },  /* field */
+    { 0x15b09c, ScrollItemListDown_c },  /* field */
+    { 0x15b143, TfrBGGfx_c },  /* field */
+    { 0x15b6f1, InitDlgIRQ_c },  /* field */
+    { 0x15c23d, _15c23d_c },  /* field */
+    { 0x15c37f, Pow10Hi_c },  /* field */
+    { 0x16c59a, AfterCutscene_c },  /* field */
+    { 0x16c8bc, Special_2d_c },  /* field */
+    { 0x16cb05, _00cb05_c },  /* field */
+    { 0x16cb72, _00cb72_c },  /* field */
+    { 0x16cfc4, Special_1d_c },  /* field */
+    { 0x16cfd0, Special_1c_c },  /* field */
+    { 0x16d342, Special_0d_c },  /* field */
+    { 0x16d831, Special_1e_c },  /* field */
+    { 0x16dbbe, IncBrightness_c },  /* field */
+    { 0x16dbd2, LoadOverworldIntro_c },  /* field */
+    { 0x16de1b, _00de1b_c },  /* field */
+    { 0x16df53, _00df53_c },  /* field */
+    { 0x16f922, _00f922_c },  /* field */
+    { 0x16fb93, TfrBG2Tilemap_c },  /* field */
+    { 0x1ea03e, BoardChoco_c },  /* field */
 };
 
 uint32_t ff4_dispatch_hits = 0;
