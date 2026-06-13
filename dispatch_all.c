@@ -173,8 +173,11 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x16cfd0, Special_1c_c },  /* field */
     { 0x16d263, LoadOverworldLeviathan_c },  /* field */
     { 0x16d342, Special_0d_c },  /* field */
+    { 0x16d36d, LoadMapStack_c },  /* field */
+    { 0x16d758, DrawDestroyedDamcyan_c },  /* field */
     { 0x16d831, Special_1e_c },  /* field */
     { 0x16d9d6, Special_06_c },  /* field */
+    { 0x16db71, DrawRedWings_c },  /* field */
     { 0x16dbbe, IncBrightness_c },  /* field */
     { 0x16dbd2, LoadOverworldIntro_c },  /* field */
     { 0x16de1b, _00de1b_c },  /* field */
@@ -246,3 +249,4 @@ __attribute__((weak)) void update_lava_anim_emu(Snes *snes) { (void)snes; }  /* 
 __attribute__((weak)) void update_water_anim_emu(Snes *snes) { (void)snes; }  /* first needed by field/UpdateWaterLavaAnim.c */
 __attribute__((weak)) void load_whirlpool_pal_emu(Snes *snes) { (void)snes; }  /* first needed by field/LoadOverworldLeviathan.c */
 __attribute__((weak)) void draw_whirlpool_emu(Snes *snes) { (void)snes; }  /* first needed by field/LoadOverworldLeviathan.c */
+__attribute__((weak)) void ExecSound_ext_emu(Snes *snes) { (void)snes; }  /* first needed by field/LoadMapStack.c */
