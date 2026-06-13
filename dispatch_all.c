@@ -9,6 +9,7 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x00b8c9, _15b8c9_c },  /* field */
     { 0x00bb6a, _15bb6a_c },  /* field */
     { 0x00c144, _15c144_c },  /* field */
+    { 0x00c3bd, UpdateWhalePal_c },  /* field */
     { 0x00cb5f, TfrBGAnimGfx_c },  /* field */
     { 0x00ffe0, Vectors_c },  /* field */
     { 0x038009, ExecBattle_c },  /* battle */
