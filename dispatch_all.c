@@ -145,6 +145,7 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x158e47, UpdateWaterLavaAnim_c },  /* field */
     { 0x158e57, TfrWaterLavaGfx_c },  /* field */
     { 0x158f34, TfrLavaGfx_c },  /* field */
+    { 0x159104, UpdateMode7Regs_c },  /* field */
     { 0x1599fb, GiveGil_c },  /* field */
     { 0x159ae9, GetTreasureTiles_c },  /* field */
     { 0x159b5b, GetTreasurePtr_c },  /* field */
