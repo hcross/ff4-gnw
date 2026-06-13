@@ -105,6 +105,7 @@ void TfrSprites_c(Snes *snes);
 void PlayGameSfx_c(Snes *snes);
 void ExecInterrupt_c(Snes *snes);
 void LoadTitleGfx_c(Snes *snes);
+void CheckBattle_c(Snes *snes);
 void WaitVblankEvent_c(Snes *snes);
 void FindEventTerminator_c(Snes *snes);
 void EventCmd_d8_c(Snes *snes);
@@ -186,7 +187,7 @@ void UpdateLocalTiles_c(Snes *snes);
 void BoardChoco_c(Snes *snes);
 
 typedef struct { uint32_t pc; void (*fn)(Snes *snes); } ff4_dispatch_entry_t;
-#define FF4_DISPATCH_COUNT 180
+#define FF4_DISPATCH_COUNT 181
 extern const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT];
 int ff4_dispatch_try(Snes *snes, uint32_t pc);
 extern uint32_t ff4_dispatch_hits;
