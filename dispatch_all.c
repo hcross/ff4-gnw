@@ -142,6 +142,7 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x15af24, CloseYesNoWindow_c },  /* field */
     { 0x15b09c, ScrollItemListDown_c },  /* field */
     { 0x15b143, TfrBGGfx_c },  /* field */
+    { 0x15b41b, GetDlgPtr1H_c },  /* field */
     { 0x15b6f1, InitDlgIRQ_c },  /* field */
     { 0x15c23d, _15c23d_c },  /* field */
     { 0x15c37f, Pow10Hi_c },  /* field */
@@ -153,6 +154,7 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x16cfd0, Special_1c_c },  /* field */
     { 0x16d342, Special_0d_c },  /* field */
     { 0x16d831, Special_1e_c },  /* field */
+    { 0x16d9d6, Special_06_c },  /* field */
     { 0x16dbbe, IncBrightness_c },  /* field */
     { 0x16dbd2, LoadOverworldIntro_c },  /* field */
     { 0x16de1b, _00de1b_c },  /* field */
