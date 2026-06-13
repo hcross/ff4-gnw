@@ -35,7 +35,7 @@ def has_standard_sig(name, mod):
     if not f.is_file():
         return False
     text = f.read_text()
-    return bool(re.search(rf'^void {re.escape(name)}_c\(Snes\s*\*\s*snes\)\s*\{{', text, re.MULTILINE))
+    return bool(re.search(rf'^(?:static\s+)?(?:inline\s+)?void {re.escape(name)}_c\s*\(\s*Snes\s*\*\s*\w+\s*\)\s*\{{', text, re.MULTILINE))
 
 def get_address(name):
     try:
@@ -47,24 +47,77 @@ def get_address(name):
     m = re.search(r'address_hint:\s*([0-9a-fA-F]+)', out)
     return int(m.group(1), 16) if m else None
 
+
+# Segment → bank, parsed from ff4-en.lnk once.
+_LNK_FILE = UPSTREAM / 'ff4-en.lnk'
+_SEGMENT_BANK = {}
+def _load_segment_banks():
+    if _SEGMENT_BANK: return
+    text = _LNK_FILE.read_text()
+    for m in re.finditer(r'(\w+):\s*load\s*=\s*bank_([0-9a-fA-F]+)', text):
+        _SEGMENT_BANK[m.group(1)] = int(m.group(2), 16)
+
+
+# Cache routine → bank derived by walking each module's .asm tree.
+_ROUTINE_BANK = {}
+def _index_module_routines(mod):
+    """Walk upstream/<mod>/*.asm; track current .segment as we encounter labels."""
+    _load_segment_banks()
+    mod_dir = UPSTREAM / mod
+    if not mod_dir.is_dir(): return
+    for asm in mod_dir.rglob('*.asm'):
+        cur_seg = None
+        for line in asm.read_text().splitlines():
+            m = re.match(r'\s*\.segment\s+"([^"]+)"', line)
+            if m:
+                cur_seg = m.group(1)
+                continue
+            lbl = re.match(r'^([A-Za-z_][A-Za-z0-9_]*):', line)
+            if lbl and cur_seg and cur_seg in _SEGMENT_BANK:
+                _ROUTINE_BANK.setdefault(lbl.group(1), _SEGMENT_BANK[cur_seg])
+
+
+def get_bank(name, fallback_bank):
+    if not _ROUTINE_BANK: pass
+    return _ROUTINE_BANK.get(name, fallback_bank)
+
 entries = []
+seen_names = set()
+for mod in MODULES:
+    _index_module_routines(mod)
 for mod, bank in MODULES.items():
+    # 1. Read PASS routines from the validation JSONL (legacy path).
     run = RUNS.get(mod)
-    if run is None or not run.is_file():
-        continue
-    for line in open(run):
-        if not line.strip(): continue
-        rec = json.loads(line)
-        if rec.get('status') != 'pass':
-            continue
-        name = Path(rec['file']).stem
-        if not has_standard_sig(name, mod):
-            continue
-        addr = get_address(name)
-        if addr is None:
-            continue
-        pc = (bank << 16) | addr
-        entries.append((pc, name, mod))
+    if run is not None and run.is_file():
+        for line in open(run):
+            if not line.strip(): continue
+            rec = json.loads(line)
+            if rec.get('status') != 'pass':
+                continue
+            name = Path(rec['file']).stem
+            if name in seen_names: continue
+            if not has_standard_sig(name, mod):
+                continue
+            addr = get_address(name)
+            if addr is None:
+                continue
+            pc = (get_bank(name, bank) << 16) | addr
+            entries.append((pc, name, mod))
+            seen_names.add(name)
+    # 2. Scan ff4-gnw/<mod>/*.c — include anything with a valid signature.
+    mod_dir = Path(mod)
+    if mod_dir.is_dir():
+        for cfile in sorted(mod_dir.glob('*.c')):
+            name = cfile.stem
+            if name in seen_names: continue
+            if not has_standard_sig(name, mod):
+                continue
+            addr = get_address(name)
+            if addr is None:
+                continue
+            pc = (get_bank(name, bank) << 16) | addr
+            entries.append((pc, name, mod))
+            seen_names.add(name)
 
 entries.sort(key=lambda e: e[0])
 print(f'{len(entries)} dispatch entries across modules')
