@@ -149,6 +149,7 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x1591ca, UpdateWipeIRQ_c },  /* field */
     { 0x159204, UpdateWipeNMI_c },  /* field */
     { 0x159792, LoadPlayerGfxWorld_c },  /* field */
+    { 0x1597a2, LoadPlayerGfxSub_c },  /* field */
     { 0x1599fb, GiveGil_c },  /* field */
     { 0x159ae9, GetTreasureTiles_c },  /* field */
     { 0x159b5b, GetTreasurePtr_c },  /* field */
