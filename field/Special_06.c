@@ -1,26 +1,28 @@
-// ADR-003 delegate: tail-call target _d9e5 is a local label not exported
-// to the symbol table; ca65-bridge cannot resolve it to a global address.
-// Rather than guess the 24-bit target, delegate the entire routine.
-// (classifier reasons: unresolved local jmp target)
 #include "snes/snes.h"
 
+// ADR-003 delegate: routine contains a jump to an anonymous label (_d9e5).
+// Since the previous translation attempt using run_emulated_func for the 
+// jump target caused ram_diverge, the most reliable approach to ensure 
+// full parity (including precise CPU state/flag transitions at the jump 
+// boundary) is to delegate the entire routine to the emulator.
 void Special_06_c(Snes *snes) {
-    Cpu *c = snes->cpu;
-    c->dp = 0;
-    c->db = 0x7E;
-    c->mf = true;      // A 8-bit (lda #imm in 8-bit context)
-    c->xf = false;     // X/Y 16-bit (field module default)
-    // No input registers needed — routine loads its own constants.
-    // No flag pre-set needed — first instruction is lda, not a branch.
-    run_emulated_func(snes, 0xD9D9D6u);
+    Cpu *cpu = snes->cpu;
+    cpu->dp = 0;
+    cpu->db = 0x00;
+    cpu->mf = true;
+    cpu->xf = false;
+
+    // Target: field::Special_06 ($00:D9D6)
+    run_emulated_func(snes, 0x00D9D6u);
 }
 
-// PITFALLS: none (delegate)
-// HELPERS: run_emulated_func (interpreter)
+// PITFALLS: 1 (DB=0x00 based on bridge report $00:D9D6)
+// HELPERS: run_emulated_func
 // CONTRACT:
-//   inputs_reg:  none
+//   inputs_reg:  a=none, x=none, y=none
 //   inputs_ram:  none
-//   output_ram:  0x91=1 (written by the emulated lda/sta sequence)
-//   entry_mode:  mf=true, xf=false, dp=0x0, db=0x7E
+//   output_ram:  0x91=1
+//   entry_mode:  mf=true, xf=false, dp=0x0, db=0x00
 //   entry_flags: z=auto, n=auto
-// DELEGATED_FUNCTION: field::Special_06 ($D9:D6)
+
+DELEGATED_FUNCTION: field::Special_06 ($00:D9D6)
