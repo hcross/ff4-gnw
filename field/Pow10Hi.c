@@ -17,4 +17,4 @@ void Pow10Hi_c(Snes *snes) {
 //   output_ram:  none
 //   entry_mode:  mf=true, xf=false, dp=0x0, db=0x0
 //   entry_flags: z=auto, n=auto
-REVERSED_FUNCTION: field::Pow10Hi ($C3:7F)
+// REVERSED_FUNCTION: field::Pow10Hi ($C3:7F)

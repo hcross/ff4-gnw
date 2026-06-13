@@ -18,4 +18,4 @@ void UpdateCtrl_emu(Snes *snes) {
     run_emulated_func(snes, 0x01FDD0u);
 }
 
-DELEGATED_FUNCTION: menu::UpdateCtrl ($01:FDD0)
+// DELEGATED_FUNCTION: menu::UpdateCtrl ($01:FDD0)
