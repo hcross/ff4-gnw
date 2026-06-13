@@ -12,6 +12,8 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x00ac7d, CheckVehicleBlock_c },  /* field */
     { 0x00b8c9, _15b8c9_c },  /* field */
     { 0x00bb6a, _15bb6a_c },  /* field */
+    { 0x00be47, CalcVehicleSpritePos_c },  /* field */
+    { 0x00c0c4, PlayerSpriteTiles_c },  /* field */
     { 0x00c144, _15c144_c },  /* field */
     { 0x00c3bd, UpdateWhalePal_c },  /* field */
     { 0x00cb5f, TfrBGAnimGfx_c },  /* field */
@@ -182,6 +184,7 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x16dbd2, LoadOverworldIntro_c },  /* field */
     { 0x16de1b, _00de1b_c },  /* field */
     { 0x16df53, _00df53_c },  /* field */
+    { 0x16f533, UpdateBG2Scroll_c },  /* field */
     { 0x16f922, _00f922_c },  /* field */
     { 0x16fb93, TfrBG2Tilemap_c },  /* field */
     { 0x1e9f6c, UpdateLocalTiles_c },  /* field */
