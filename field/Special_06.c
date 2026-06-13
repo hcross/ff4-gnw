@@ -25,4 +25,4 @@ void Special_06_c(Snes *snes) {
 //   entry_mode:  mf=true, xf=false, dp=0x0, db=0x00
 //   entry_flags: z=auto, n=auto
 
-DELEGATED_FUNCTION: field::Special_06 ($00:D9D6)
+// DELEGATED_FUNCTION: field::Special_06 ($00:D9D6)
