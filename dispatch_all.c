@@ -87,8 +87,6 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x03e839, Cmd_0c_c },  /* battle */
     { 0x03e903, Cmd_08_c },  /* battle */
     { 0x03eba2, Cmd_01_c },  /* battle */
-    { 0x048000, InitSound_ext_c },  /* sound */
-    { 0x048003, ExecSound_ext_c },  /* sound */
     { 0x0485e1, PlayGameSfx_c },  /* sound */
     { 0x04861e, ExecInterrupt_c },  /* sound */
     { 0x088690, LoadTitleGfx_c },  /* field */
@@ -163,11 +161,6 @@ uint32_t ff4_dispatch_hits = 0;
 uint32_t ff4_dispatch_misses = 0;
 uint32_t ff4_miss_per_bank[256] = {0};
 
-#ifdef FF4_AUTOBOOT
-uint32_t g_diag_miss_ring[8] = {0};
-static uint8_t g_diag_miss_ring_head = 0;
-#endif
-
 int ff4_dispatch_try(Snes *snes, uint32_t pc) {
     int lo = 0, hi = FF4_DISPATCH_COUNT - 1;
     while (lo <= hi) {
@@ -182,17 +175,5 @@ int ff4_dispatch_try(Snes *snes, uint32_t pc) {
     }
     ff4_dispatch_misses++;
     ff4_miss_per_bank[(pc >> 16) & 0xff]++;
-#ifdef FF4_AUTOBOOT
-    {   /* record unique miss PCs in a small ring (dedup against existing) */
-        int already = 0;
-        for (int i = 0; i < 8; i++) {
-            if (g_diag_miss_ring[i] == pc) { already = 1; break; }
-        }
-        if (!already) {
-            g_diag_miss_ring[g_diag_miss_ring_head] = pc;
-            g_diag_miss_ring_head = (g_diag_miss_ring_head + 1) & 7;
-        }
-    }
-#endif
     return 0;
 }

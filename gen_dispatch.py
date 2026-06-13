@@ -22,6 +22,24 @@ MODULES = {
     'cutscene': 0x13,
 }
 
+# Routines we intentionally KEEP out of the C dispatch so LakeSnes runs the
+# original 65816 asm via its interpreter instead. These are routines whose C
+# wrappers only call a `*_emu()` helper, but that helper is a weak no-op stub
+# in ff4_helpers.c (ADR-001 voie B). For routines whose side effects are
+# entirely contained in the C body that is harmless, but for routines that
+# DRIVE the SPC700 mailbox handshake (InitSound, ExecSound) the no-op breaks
+# the audio CPU's boot sequence and the main CPU spins forever waiting for
+# an ack that never comes (proved on hardware 2026-06-13 via the autoboot
+# diagnostic harness — PC parked at 04:8232, out=AABB constant, inPorts
+# never advances past 01).
+#
+# Until RunEmulatedFunc is wired on G&W, leave SPC-driving routines out of
+# the dispatch so LakeSnes' real APU emulation runs them end-to-end.
+SKIPPED_ROUTINES = {
+    'InitSound_ext',
+    'ExecSound_ext',
+}
+
 # Validation files we know exist (extend as we re-run modules).
 RUNS = {
     'battle':   FF4_PORT / 'translator/runs/qwen3_validation_after_retry.jsonl',
@@ -96,6 +114,7 @@ for mod, bank in MODULES.items():
                 continue
             name = Path(rec['file']).stem
             if name in seen_names: continue
+            if name in SKIPPED_ROUTINES: continue
             if not has_standard_sig(name, mod):
                 continue
             addr = get_address(name)
@@ -110,6 +129,7 @@ for mod, bank in MODULES.items():
         for cfile in sorted(mod_dir.glob('*.c')):
             name = cfile.stem
             if name in seen_names: continue
+            if name in SKIPPED_ROUTINES: continue
             if not has_standard_sig(name, mod):
                 continue
             addr = get_address(name)
