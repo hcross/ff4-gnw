@@ -174,6 +174,7 @@ void _00cb05_c(Snes *snes);
 void _00cb72_c(Snes *snes);
 void Special_1d_c(Snes *snes);
 void Special_1c_c(Snes *snes);
+void LoadOverworldLeviathan_c(Snes *snes);
 void Special_0d_c(Snes *snes);
 void Special_1e_c(Snes *snes);
 void Special_06_c(Snes *snes);
@@ -187,7 +188,7 @@ void UpdateLocalTiles_c(Snes *snes);
 void BoardChoco_c(Snes *snes);
 
 typedef struct { uint32_t pc; void (*fn)(Snes *snes); } ff4_dispatch_entry_t;
-#define FF4_DISPATCH_COUNT 181
+#define FF4_DISPATCH_COUNT 182
 extern const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT];
 int ff4_dispatch_try(Snes *snes, uint32_t pc);
 extern uint32_t ff4_dispatch_hits;
