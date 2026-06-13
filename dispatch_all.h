@@ -145,6 +145,7 @@ void GetTreasurePtr_c(Snes *snes);
 void CloseYesNoWindow_c(Snes *snes);
 void ScrollItemListDown_c(Snes *snes);
 void TfrBGGfx_c(Snes *snes);
+void GetDlgPtr1H_c(Snes *snes);
 void InitDlgIRQ_c(Snes *snes);
 void _15c23d_c(Snes *snes);
 void Pow10Hi_c(Snes *snes);
@@ -156,6 +157,7 @@ void Special_1d_c(Snes *snes);
 void Special_1c_c(Snes *snes);
 void Special_0d_c(Snes *snes);
 void Special_1e_c(Snes *snes);
+void Special_06_c(Snes *snes);
 void IncBrightness_c(Snes *snes);
 void LoadOverworldIntro_c(Snes *snes);
 void _00de1b_c(Snes *snes);
@@ -166,7 +168,7 @@ void UpdateLocalTiles_c(Snes *snes);
 void BoardChoco_c(Snes *snes);
 
 typedef struct { uint32_t pc; void (*fn)(Snes *snes); } ff4_dispatch_entry_t;
-#define FF4_DISPATCH_COUNT 160
+#define FF4_DISPATCH_COUNT 162
 extern const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT];
 int ff4_dispatch_try(Snes *snes, uint32_t pc);
 extern uint32_t ff4_dispatch_hits;
