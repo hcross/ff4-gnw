@@ -7,6 +7,7 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x008302, UpdatePlayerSpeed_c },  /* field */
     { 0x00834e, InitMapRAM_c },  /* field */
     { 0x00aa58, CheckTilePass_c },  /* field */
+    { 0x00aad8, SetPlayerNPCMap_c },  /* field */
     { 0x00ab13, ClearPlayerNPCMap_c },  /* field */
     { 0x00b8c9, _15b8c9_c },  /* field */
     { 0x00bb6a, _15bb6a_c },  /* field */
