@@ -55,15 +55,23 @@ def has_standard_sig(name, mod):
     text = f.read_text()
     return bool(re.search(rf'^(?:static\s+)?(?:inline\s+)?void {re.escape(name)}_c\s*\(\s*Snes\s*\*\s*\w+\s*\)\s*\{{', text, re.MULTILINE))
 
+_NAKED_ADDR_RE = re.compile(r'^_([0-9a-fA-F]{2})([0-9a-fA-F]{4})$')
+
 def get_address(name):
     try:
         out = subprocess.check_output(
             [str(BRIDGE), '--root', str(UPSTREAM), 'get-asm', name],
             text=True, stderr=subprocess.DEVNULL)
     except subprocess.CalledProcessError:
-        return None
+        out = ''
     m = re.search(r'address_hint:\s*([0-9a-fA-F]+)', out)
-    return int(m.group(1), 16) if m else None
+    if m: return int(m.group(1), 16)
+    # Fallback: routine named after its bank+offset (e.g. _15cadc → bank 15, addr CADC).
+    # Used when the upstream asm has no symbolic label but the routine is
+    # known by its hardware address (e.g. discovered via dispatch miss ring).
+    m = _NAKED_ADDR_RE.match(name)
+    if m: return int(m.group(2), 16)
+    return None
 
 
 # Segment → bank, parsed from ff4-en.lnk once.
@@ -97,7 +105,12 @@ def _index_module_routines(mod):
 
 def get_bank(name, fallback_bank):
     if not _ROUTINE_BANK: pass
-    return _ROUTINE_BANK.get(name, fallback_bank)
+    if name in _ROUTINE_BANK:
+        return _ROUTINE_BANK[name]
+    # Naked _<bank><addr> pattern: extract the bank from the name itself.
+    m = _NAKED_ADDR_RE.match(name)
+    if m: return int(m.group(1), 16)
+    return fallback_bank
 
 entries = []
 seen_names = set()
