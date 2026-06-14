@@ -47,6 +47,15 @@ void _00885e_c(Snes *snes) {
     /* Advance source pointer by 8 (the original does a 16-bit ADC). */
     uint16_t new_off = src_off + 8;
     write16(ram, 0x3D, new_off);
+
+    /* Tail of original asm:
+     *   TDC / XBA / SEP #$20    (A8 = 0)
+     *   INY INY                 advance caller's Y by 2
+     *   RTS
+     * The caller at $00:8693 / $00:86B0 uses Y as a 16-bit array index
+     * and loops via `CPY #$0014 / BNE`. Without INY INY here it spins
+     * forever. */
+    snes->cpu->y = (snes->cpu->y + 2) & 0xFFFF;
 }
 
 /* PITFALLS: 6 (16-bit add via ADC #$0008), 12 (ROM read via snes_read)
