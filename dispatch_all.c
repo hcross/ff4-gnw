@@ -204,6 +204,15 @@ static uint8_t g_diag_miss_ring_head = 0;
 #endif
 
 int ff4_dispatch_try(Snes *snes, uint32_t pc) {
+#ifdef FF4_DISABLE_DISPATCH
+    /* Force every JSL to fall back to the 65816 interpreter — used to
+     * isolate whether the C ports are what corrupts state in a given
+     * scenario. Still records the miss for diagnostic. */
+    (void)snes;
+    ff4_dispatch_misses++;
+    ff4_miss_per_bank[(pc >> 16) & 0xff]++;
+    return 0;
+#else
     int lo = 0, hi = FF4_DISPATCH_COUNT - 1;
     while (lo <= hi) {
         int mid = (lo + hi) >> 1;
@@ -215,6 +224,7 @@ int ff4_dispatch_try(Snes *snes, uint32_t pc) {
         }
         if (e < pc) lo = mid + 1; else hi = mid - 1;
     }
+#endif
     ff4_dispatch_misses++;
     ff4_miss_per_bank[(pc >> 16) & 0xff]++;
 #ifdef FF4_AUTOBOOT
