@@ -187,6 +187,7 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x16f533, UpdateBG2Scroll_c },  /* field */
     { 0x16f922, _00f922_c },  /* field */
     { 0x16fb93, TfrBG2Tilemap_c },  /* field */
+    { 0x16ffab, DecodeBG1Tilemap_c },  /* field */
     { 0x1e9f6c, UpdateLocalTiles_c },  /* field */
     { 0x1ea03e, BoardChoco_c },  /* field */
 };
@@ -253,3 +254,4 @@ __attribute__((weak)) void update_water_anim_emu(Snes *snes) { (void)snes; }  /*
 __attribute__((weak)) void load_whirlpool_pal_emu(Snes *snes) { (void)snes; }  /* first needed by field/LoadOverworldLeviathan.c */
 __attribute__((weak)) void draw_whirlpool_emu(Snes *snes) { (void)snes; }  /* first needed by field/LoadOverworldLeviathan.c */
 __attribute__((weak)) void ExecSound_ext_emu(Snes *snes) { (void)snes; }  /* first needed by field/LoadMapStack.c */
+__attribute__((weak)) void decode_sub_tilemap_emu(Snes *snes) { (void)snes; }  /* first needed by field/DecodeBG1Tilemap.c */
