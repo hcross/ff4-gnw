@@ -166,8 +166,10 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x15b8c9, _15b8c9_c },  /* field */
     { 0x15bb6a, _15bb6a_c },  /* field */
     { 0x15c144, _15c144_c },  /* field */
+    { 0x15c163, _15c163_c },  /* field */
     { 0x15c23d, _15c23d_c },  /* field */
     { 0x15c37f, Pow10Hi_c },  /* field */
+    { 0x15ca5e, _15ca5e_c },  /* field */
     { 0x15cadc, _15cadc_c },  /* field */
     { 0x16c59a, AfterCutscene_c },  /* field */
     { 0x16c8bc, Special_2d_c },  /* field */
@@ -204,15 +206,6 @@ static uint8_t g_diag_miss_ring_head = 0;
 #endif
 
 int ff4_dispatch_try(Snes *snes, uint32_t pc) {
-#ifdef FF4_DISABLE_DISPATCH
-    /* Force every JSL to fall back to the 65816 interpreter — used to
-     * isolate whether the C ports are what corrupts state in a given
-     * scenario. Still records the miss for diagnostic. */
-    (void)snes;
-    ff4_dispatch_misses++;
-    ff4_miss_per_bank[(pc >> 16) & 0xff]++;
-    return 0;
-#else
     int lo = 0, hi = FF4_DISPATCH_COUNT - 1;
     while (lo <= hi) {
         int mid = (lo + hi) >> 1;
@@ -224,7 +217,6 @@ int ff4_dispatch_try(Snes *snes, uint32_t pc) {
         }
         if (e < pc) lo = mid + 1; else hi = mid - 1;
     }
-#endif
     ff4_dispatch_misses++;
     ff4_miss_per_bank[(pc >> 16) & 0xff]++;
 #ifdef FF4_AUTOBOOT
@@ -239,16 +231,7 @@ int ff4_dispatch_try(Snes *snes, uint32_t pc) {
         }
     }
 #endif
-#ifdef FF4_STUB_ALL_MISSES
-    /* Diagnostic mode: every uncovered JSL returns immediately (no-op).
-     * For savestate-resume PoC — lets the main game loop progress without
-     * hanging on unported routines like InitSound/ExecSound. Audio + many
-     * subsystems won't actually do anything but rendering may surface. */
-    (void)snes;
-    return 1;
-#else
     return 0;
-#endif
 }
 
 
