@@ -21,21 +21,19 @@
 void _15cadc_c(Snes *snes) {
     /* Reset OAM word address. */
     snes_writeBBus(snes, 0x02, 0x00);  /* $2102 OAMADDL */
+    snes_writeBBus(snes, 0x03, 0x00);  /* $2103 OAMADDH */
 
-    /* Clear MDMAEN before reconfiguring. */
-    dma_write(snes->dma, 0x420b, 0x00);
-
-    /* DMA0 configuration. */
-    dma_write(snes->dma, 0x4300, 0x00);  /* ctrl: byte, A->B, fixed dest */
-    dma_write(snes->dma, 0x4301, 0x04);  /* B-bus dest = $2104 OAMDATA */
-    dma_write(snes->dma, 0x4302, 0x00);  /* src low  */
-    dma_write(snes->dma, 0x4303, 0x03);  /* src high */
-    dma_write(snes->dma, 0x4304, 0x00);  /* src bank */
-    dma_write(snes->dma, 0x4305, 0x20);  /* count low */
-    dma_write(snes->dma, 0x4306, 0x02);  /* count high (= 0x0220) */
-
-    /* BISECT: skip the DMA trigger to test if dma_doDma is what crashes. */
-    /* dma_startDma(snes->dma, 0x01, false); */
+    /* Direct OAM copy: 544 bytes from WRAM $00:0300 to PPU OAMDATA ($2104).
+     * Bypasses the LakeSnes DMA engine — the dma_startDma path triggers
+     * snes_syncCycles which is incompatible with savestate-resumed APU
+     * state (observed: silent Hardfault during the first NMI invocation
+     * post-savestate). The PPU OAM word address auto-increments on each
+     * write to $2104, so the loop is equivalent to a DMA mode-0 transfer
+     * over 0x220 bytes. */
+    const uint8_t *src = &snes->ram[0x0300];
+    for (int i = 0; i < 0x0220; i++) {
+        snes_writeBBus(snes, 0x04, src[i]);  /* $2104 OAMDATA */
+    }
 }
 
 /* PITFALLS: 6 (16-bit reg vs 8-bit writes), 8 (DMA mid-frame)
