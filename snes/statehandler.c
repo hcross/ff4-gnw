@@ -43,13 +43,20 @@ void sh_free(StateHandler* sh) {
   free(sh);
 }
 
+static sh_writebyte_hook_t g_sh_writebyte_hook = NULL;
+
+void sh_set_writeByte_hook(sh_writebyte_hook_t hook) {
+  g_sh_writebyte_hook = hook;
+}
+
 static void sh_writeByte(StateHandler* sh, uint8_t val) {
+  /* G&W streaming dump: forward every byte to the hook before storing.
+   * This lets app_main_ff4 emit the savestate over serial without holding
+   * the whole ~280 KB in RAM_EMU at once. */
+  if (g_sh_writebyte_hook) g_sh_writebyte_hook(val);
+
   if(sh->offset >= sh->allocSize) {
     if (sh->external) {
-      /* G&W: caller-owned buffer too small. Drop the byte silently and
-       * keep advancing the offset so the final size is reported correctly.
-       * sh_placeInt at offset 8 will still write the length, which gives
-       * the caller a way to detect overflow (sh->offset > sh->allocSize). */
       sh->offset++;
       return;
     }
