@@ -134,6 +134,7 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x14f63e, GilWindowTiles4_c },  /* field */
     { 0x14f6d6, DlgTilesTop_c },  /* field */
     { 0x14f796, MapTitleTilesTop_c },  /* field */
+    { 0x14f7b6, MapTitleTilesBtm_c },  /* field */
     { 0x14fa16, LavaAnimPal_c },  /* field */
     { 0x14fb1e, WipeScanlineTbl_c },  /* field */
     { 0x14fd00, InitCtrl_ext2_c },  /* menu */
@@ -171,6 +172,7 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x15c23d, _15c23d_c },  /* field */
     { 0x15c37f, Pow10Hi_c },  /* field */
     { 0x15ca5e, _15ca5e_c },  /* field */
+    { 0x15ca85, _15ca85_c },  /* field */
     { 0x15cadc, _15cadc_c },  /* field */
     { 0x16c59a, AfterCutscene_c },  /* field */
     { 0x16c8bc, Special_2d_c },  /* field */

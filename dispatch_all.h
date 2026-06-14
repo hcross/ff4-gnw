@@ -137,6 +137,7 @@ void GilWindowTiles3_c(Snes *snes);
 void GilWindowTiles4_c(Snes *snes);
 void DlgTilesTop_c(Snes *snes);
 void MapTitleTilesTop_c(Snes *snes);
+void MapTitleTilesBtm_c(Snes *snes);
 void LavaAnimPal_c(Snes *snes);
 void WipeScanlineTbl_c(Snes *snes);
 void InitCtrl_ext2_c(Snes *snes);
@@ -174,6 +175,7 @@ void _15c163_c(Snes *snes);
 void _15c23d_c(Snes *snes);
 void Pow10Hi_c(Snes *snes);
 void _15ca5e_c(Snes *snes);
+void _15ca85_c(Snes *snes);
 void _15cadc_c(Snes *snes);
 void AfterCutscene_c(Snes *snes);
 void Special_2d_c(Snes *snes);
@@ -200,7 +202,7 @@ void UpdateLocalTiles_c(Snes *snes);
 void BoardChoco_c(Snes *snes);
 
 typedef struct { uint32_t pc; void (*fn)(Snes *snes); } ff4_dispatch_entry_t;
-#define FF4_DISPATCH_COUNT 194
+#define FF4_DISPATCH_COUNT 196
 extern const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT];
 int ff4_dispatch_try(Snes *snes, uint32_t pc);
 extern uint32_t ff4_dispatch_hits;
