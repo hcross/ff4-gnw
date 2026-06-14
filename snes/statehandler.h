@@ -10,6 +10,7 @@ typedef struct StateHandler {
   int offset;
   uint8_t* data;
   int allocSize;
+  bool external;  /* G&W port: data is caller-owned (no malloc/free) */
 } StateHandler;
 
 StateHandler* sh_init(bool saving, const uint8_t* data, int size);

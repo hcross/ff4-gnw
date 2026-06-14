@@ -16,18 +16,22 @@ StateHandler* sh_init(bool saving, const uint8_t* data, int size) {
   sh->saving = saving;
   sh->offset = 0;
   if(!saving) {
-    sh->data = malloc(size);
-    memcpy(sh->data, data, size);
+    /* G&W port: load path is read-only and the caller-provided buffer is
+     * already memory-mapped (XIP in extflash). Point at it directly instead
+     * of malloc+memcpy — the G&W heap is too small for a 270 KB savestate. */
+    sh->data = (uint8_t*)data;
     sh->allocSize = size;
+    sh->external = true;
   } else {
     sh->data = malloc(1024);
     sh->allocSize = 1024;
+    sh->external = false;
   }
   return sh;
 }
 
 void sh_free(StateHandler* sh) {
-  free(sh->data);
+  if (!sh->external) free(sh->data);
   free(sh);
 }
 
