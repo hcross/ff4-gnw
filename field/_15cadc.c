@@ -34,8 +34,8 @@ void _15cadc_c(Snes *snes) {
     dma_write(snes->dma, 0x4305, 0x20);  /* count low */
     dma_write(snes->dma, 0x4306, 0x02);  /* count high (= 0x0220) */
 
-    /* Trigger channel 0. */
-    dma_startDma(snes->dma, 0x01, false);
+    /* BISECT: skip the DMA trigger to test if dma_doDma is what crashes. */
+    /* dma_startDma(snes->dma, 0x01, false); */
 }
 
 /* PITFALLS: 6 (16-bit reg vs 8-bit writes), 8 (DMA mid-frame)
