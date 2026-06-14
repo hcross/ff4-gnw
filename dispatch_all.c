@@ -229,7 +229,16 @@ int ff4_dispatch_try(Snes *snes, uint32_t pc) {
         }
     }
 #endif
+#ifdef FF4_STUB_ALL_MISSES
+    /* Diagnostic mode: every uncovered JSL returns immediately (no-op).
+     * For savestate-resume PoC — lets the main game loop progress without
+     * hanging on unported routines like InitSound/ExecSound. Audio + many
+     * subsystems won't actually do anything but rendering may surface. */
+    (void)snes;
+    return 1;
+#else
     return 0;
+#endif
 }
 
 
