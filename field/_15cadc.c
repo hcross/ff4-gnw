@@ -19,23 +19,9 @@
  * ever reaches the PPU after a savestate resumes.
  */
 void _15cadc_c(Snes *snes) {
-    /* Reset OAM word address. */
-    snes_writeBBus(snes, 0x02, 0x00);  /* $2102 OAMADDL */
-
-    /* Clear MDMAEN before reconfiguring. */
-    dma_write(snes->dma, 0x420b, 0x00);
-
-    /* DMA0 configuration. */
-    dma_write(snes->dma, 0x4300, 0x00);  /* ctrl: byte, A->B, fixed dest */
-    dma_write(snes->dma, 0x4301, 0x04);  /* B-bus dest = $2104 OAMDATA */
-    dma_write(snes->dma, 0x4302, 0x00);  /* src low  */
-    dma_write(snes->dma, 0x4303, 0x03);  /* src high */
-    dma_write(snes->dma, 0x4304, 0x00);  /* src bank */
-    dma_write(snes->dma, 0x4305, 0x20);  /* count low */
-    dma_write(snes->dma, 0x4306, 0x02);  /* count high (= 0x0220) */
-
-    /* Trigger channel 0. */
-    dma_startDma(snes->dma, 0x01, false);
+    /* TEMPORARY STUB to confirm the loop break is the only issue. Restore
+     * the full DMA body once we've validated the dispatch path. */
+    (void)snes;
 }
 
 /* PITFALLS: 6 (16-bit reg vs 8-bit writes), 8 (DMA mid-frame)
