@@ -308,6 +308,19 @@ void snes_writeBBus(Snes* snes, uint8_t adr, uint8_t val) {
   if(adr < 0x80) {
     snes_catchupApu(snes); // catch up the apu before writing
     snes->apu->inPorts[adr & 0x3] = val;
+#ifdef FF4_SPC4_RESPONDER
+    /* MVP synchronous mailbox responder: the SPC700 is stubbed on G&W,
+     * so polling loops in FF4 audio routines (PlaySong, InitSound, etc.)
+     * — which write a counter to $2140 then spin on `cmp $2140 / bne` —
+     * never see the SPC's expected echo and the CPU spins forever.
+     * Mirror inPorts → outPorts synchronously at write time so the bne
+     * loop exits on the very next opcode. No audio generated; this only
+     * unblocks the FF4 audio-engine state machine so the main CPU can
+     * proceed past upload/handshake phases. */
+    extern void ff4_snes_spc4_on_inport_write(Snes *snes, uint8_t port,
+                                              uint8_t val);
+    ff4_snes_spc4_on_inport_write(snes, adr & 0x3, val);
+#endif
     return;
   }
   switch(adr) {
