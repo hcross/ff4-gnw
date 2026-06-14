@@ -101,6 +101,7 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x0485e1, PlayGameSfx_c },  /* sound */
     { 0x04861e, ExecInterrupt_c },  /* sound */
     { 0x088690, LoadTitleGfx_c },  /* field */
+    { 0x08885e, TfrTitleCrystalTiles_c },  /* field */
     { 0x0e8b3c, CheckBattle_c },  /* field */
     { 0x12e35b, WaitVblankEvent_c },  /* field */
     { 0x12e55a, FindEventTerminator_c },  /* field */
