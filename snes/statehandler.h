@@ -16,6 +16,12 @@ typedef struct StateHandler {
 StateHandler* sh_init(bool saving, const uint8_t* data, int size);
 void sh_free(StateHandler* sh);
 
+/* G&W: install a per-byte hook fired from sh_writeByte. Lets a save
+ * stream out byte-by-byte (e.g. to serial) without needing a 300 KB
+ * buffer that wouldn't fit in RAM_EMU. Pass NULL to clear. */
+typedef void (*sh_writebyte_hook_t)(uint8_t byte);
+void sh_set_writeByte_hook(sh_writebyte_hook_t hook);
+
 void sh_handleBools(StateHandler* sh, ...);
 void sh_handleBytes(StateHandler* sh, ...);
 void sh_handleBytesS(StateHandler* sh, ...);
