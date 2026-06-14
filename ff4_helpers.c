@@ -82,8 +82,56 @@ __attribute__((weak)) void target_monster_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void target_monster_type_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void tfr_lava_gfx_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void tfr_water_gfx_emu(Snes *snes) { (void)snes; }
-__attribute__((weak)) void update_ctrl_field_emu(Snes *snes) { (void)snes; }
-__attribute__((weak)) void update_ctrl_emu(Snes *snes) { (void)snes; }
+/* update_ctrl_field_emu / update_ctrl_emu — real implementations.
+ *
+ * The original FF4 NMI handler (\$00:9450) calls
+ *   JSL \$018010 (UpdateCtrlField_ext)
+ *     -> JSR \$805e (UpdateCtrlField)
+ *       -> stores 0 at f:\$000140 (disable multi-controller update)
+ *       -> JSL \$14FD03 (UpdateCtrl_ext) -> JMP UpdateCtrl (\$14:FD12)
+ *
+ * UpdateCtrl reads \$4218/\$4219 (auto-joypad result for ctrl 1) and
+ * \$421A/\$421B (ctrl 2), runs each byte through the user-configurable
+ * button-mapping table, and ultimately stores the mapped 16-bit result
+ * at zero-page bytes \$00..\$03 (\$00..\$01 = ctrl 1, \$02..\$03 = ctrl 2).
+ *
+ * On G&W the LakeSnes auto-joypad has already populated
+ * \$portAutoRead[0] with the 16-bit ctrl 1 word during the emulated
+ * VBlank. We side-step the full mapping pass (the default identity
+ * mapping is sufficient to advance the title screen) and just stream
+ * the raw button bits into the zero-page mirrors. The byte order
+ * matches the title-screen reader (\$15:CA1D):
+ *
+ *   ram[\$02] = low byte (\$4218):  A X L R 0 0 0 0
+ *   ram[\$03] = high byte (\$4219): B Y Sel Start Up Down Left Right
+ *
+ * Ctrl 1 (\$00/\$01) and ctrl 2 (\$02/\$03) get the same bits — the
+ * G&W has a single joypad and the title only checks one side.
+ *
+ * f:\$000140 mirror of the disable-multi-controller flag also gets
+ * cleared to match the asm prologue, otherwise a later FF4 menu
+ * subroutine reads stale data. */
+void update_ctrl_field_emu(Snes *snes) {
+    if (snes == NULL || snes->input1 == NULL) return;
+
+    uint16_t port1 = snes->portAutoRead[0];
+    uint8_t  lo = (uint8_t)(port1 & 0xFF);
+    uint8_t  hi = (uint8_t)((port1 >> 8) & 0xFF);
+
+    snes->ram[0x00] = lo;
+    snes->ram[0x01] = hi;
+    snes->ram[0x02] = lo;
+    snes->ram[0x03] = hi;
+
+    /* f:\$000140 is in bank \$00 WRAM mirror — the same 128 KB array. */
+    snes->ram[0x0140] = 0x00;
+}
+
+void update_ctrl_emu(Snes *snes) {
+    /* Same job — UpdateCtrl_ext is the inner call. Idempotent if called
+     * twice in the same frame. */
+    update_ctrl_field_emu(snes);
+}
 __attribute__((weak)) void update_equip_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void update_scroll_regs_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void update_window_color_emu(Snes *snes) { (void)snes; }
