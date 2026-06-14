@@ -112,7 +112,7 @@ __attribute__((weak)) void tfr_water_gfx_emu(Snes *snes) { (void)snes; }
  * cleared to match the asm prologue, otherwise a later FF4 menu
  * subroutine reads stale data. */
 void update_ctrl_field_emu(Snes *snes) {
-    if (snes == NULL || snes->input1 == NULL) return;
+    if (snes == 0 || snes->input1 == 0) return;
 
     uint16_t port1 = snes->portAutoRead[0];
     uint8_t  lo = (uint8_t)(port1 & 0xFF);
