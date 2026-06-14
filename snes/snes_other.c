@@ -197,6 +197,23 @@ int snes_saveState(Snes* snes, uint8_t* data) {
   return size;
 }
 
+/* G&W: save state directly into a caller-provided buffer. Avoids the
+ * realloc-grow malloc loop in the upstream save path which would hit the
+ * 87 KB heap limit on G&W. Returns the savestate size (which may be > buf_size
+ * if the buffer was too small — caller should compare). */
+int snes_saveStateInto(Snes* snes, uint8_t* buf, int buf_size) {
+  StateHandler* sh = sh_init(true, buf, buf_size);
+  uint32_t id = 0x4653534c;
+  uint32_t version = stateVersion;
+  sh_handleInts(sh, &id, &version, &version, NULL);
+  cart_handleTypeState(snes->cart, sh);
+  snes_handleState(snes, sh);
+  sh_placeInt(sh, 8, sh->offset);
+  int size = sh->offset;
+  sh_free(sh);
+  return size;
+}
+
 bool snes_loadState(Snes* snes, uint8_t* data, int size) {
   StateHandler* sh = sh_init(false, data, size);
   uint32_t id = 0, version = 0, length = 0;

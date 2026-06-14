@@ -92,6 +92,7 @@ void snes_setSamples(Snes* snes, int16_t* sampleData, int samplesPerFrame);
 int snes_saveBattery(Snes* snes, uint8_t* data);
 bool snes_loadBattery(Snes* snes, uint8_t* data, int size);
 int snes_saveState(Snes* snes, uint8_t* data);
+int snes_saveStateInto(Snes* snes, uint8_t* buf, int buf_size);
 bool snes_loadState(Snes* snes, uint8_t* data, int size);
 
 #endif

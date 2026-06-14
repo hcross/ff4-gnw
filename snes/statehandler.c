@@ -22,6 +22,14 @@ StateHandler* sh_init(bool saving, const uint8_t* data, int size) {
     sh->data = (uint8_t*)data;
     sh->allocSize = size;
     sh->external = true;
+  } else if (data != NULL && size > 0) {
+    /* G&W port: save into caller-owned buffer (avoids realloc-grow malloc
+     * loop that would otherwise hit the 87 KB heap limit). Caller must
+     * provide a buffer large enough for the whole savestate (~280 KB for
+     * version 2). Overflow is silently dropped by sh_writeByte. */
+    sh->data = (uint8_t*)data;
+    sh->allocSize = size;
+    sh->external = true;
   } else {
     sh->data = malloc(1024);
     sh->allocSize = 1024;
@@ -37,7 +45,14 @@ void sh_free(StateHandler* sh) {
 
 static void sh_writeByte(StateHandler* sh, uint8_t val) {
   if(sh->offset >= sh->allocSize) {
-    // realloc
+    if (sh->external) {
+      /* G&W: caller-owned buffer too small. Drop the byte silently and
+       * keep advancing the offset so the final size is reported correctly.
+       * sh_placeInt at offset 8 will still write the length, which gives
+       * the caller a way to detect overflow (sh->offset > sh->allocSize). */
+      sh->offset++;
+      return;
+    }
     sh->data = realloc(sh->data, sh->allocSize * 2);
     sh->allocSize *= 2;
   }
