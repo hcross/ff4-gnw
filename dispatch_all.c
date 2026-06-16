@@ -1,5 +1,15 @@
 #include "dispatch_all.h"
 
+/* Stub for ExecSound_ext ($04:8003): the title routine ShowTitle ($00:85FA)
+ * calls `jsl ExecSound_ext` as its 8th instruction; the real sound engine
+ * (jsr ExecSound) spins waiting for an SPC handshake that never completes on
+ * G&W, so ShowTitle never returns and never loads the logo tilemap. No-op
+ * here so the dispatch JSL hook simulates RTL and ShowTitle proceeds. This
+ * silences all music/SFX (acceptable for now); the proper fix is a working
+ * SPC responder. TODO: move into gen_dispatch.py instead of editing the
+ * generated table by hand. */
+static void ExecSound_ext_stub(Snes *snes) { (void)snes; }
+
 const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x00808e, AfterBattle_c },  /* field */
     { 0x0080a0, FieldMain_c },  /* field */
@@ -100,6 +110,7 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x03e903, Cmd_08_c },  /* battle */
     { 0x03eba2, Cmd_01_c },  /* battle */
     { 0x03fe03, TfrSprites_c },  /* field */
+    { 0x048004, ExecSound_ext_stub },  /* sound: stub to unblock title (SPC wait); jsl target per ROM bytes at $00:860D */
     { 0x0485e1, PlayGameSfx_c },  /* sound */
     { 0x04861e, ExecInterrupt_c },  /* sound */
     { 0x088690, LoadTitleGfx_c },  /* field */
@@ -211,16 +222,14 @@ static uint8_t g_diag_miss_ring_head = 0;
 #endif
 
 int ff4_dispatch_try(Snes *snes, uint32_t pc) {
-    int lo = 0, hi = FF4_DISPATCH_COUNT - 1;
-    while (lo <= hi) {
-        int mid = (lo + hi) >> 1;
-        uint32_t e = ff4_dispatch_table[mid].pc;
-        if (e == pc) {
+    /* Linear scan (binary search was unreliable: gen_dispatch.py sorts by the
+     * original pc, then rewrites banks, leaving the table unsorted). */
+    for (int i = 0; i < FF4_DISPATCH_COUNT; i++) {
+        if (ff4_dispatch_table[i].pc == pc) {
             ff4_dispatch_hits++;
-            ff4_dispatch_table[mid].fn(snes);
+            ff4_dispatch_table[i].fn(snes);
             return 1;
         }
-        if (e < pc) lo = mid + 1; else hi = mid - 1;
     }
     ff4_dispatch_misses++;
     ff4_miss_per_bank[(pc >> 16) & 0xff]++;
