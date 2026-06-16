@@ -33,18 +33,28 @@
 void _00883d_c(Snes *snes) {
     uint8_t *ram = snes->ram;
 
+    /* The transfer params ($3C..$48) are DIRECT-PAGE locations: the original
+     * `STA $3C` / `STX $47` resolve against the 65816 direct-page register D.
+     * ShowTitle runs with D=$0600, so they live at $063C.. — NOT absolute zero
+     * page (the CONTRACT's `dp=0x0` was a wrong RE assumption). _15ca85_c reads
+     * them DP-relative, so we must write them the same way or it streams from
+     * a stale source bank ($00 instead of $08). Honour D. */
+    uint16_t d = snes->cpu->dp;
+    #define DPW(off, v) write16(ram, (uint16_t)(d + (off)), (v))
+
     /* Common params: source bank $08, size $2800 bytes. */
-    ram[0x3C] = 0x08;
-    write16(ram, 0x3D, 0xC000);
-    write16(ram, 0x45, 0x2800);
+    ram[(uint16_t)(d + 0x3C)] = 0x08;
+    DPW(0x3D, 0xC000);
+    DPW(0x45, 0x2800);
 
     /* First half - dest $0000. */
-    write16(ram, 0x47, 0x0000);
+    DPW(0x47, 0x0000);
     _15ca85_c(snes);
 
     /* Second half - dest $4000. */
-    write16(ram, 0x47, 0x4000);
+    DPW(0x47, 0x4000);
     _15ca85_c(snes);
+    #undef DPW
 }
 
 /* PITFALLS: 6 (16-bit src/dst/size words), 12 (ROM source via _15ca85)
@@ -53,7 +63,7 @@ void _00883d_c(Snes *snes) {
  *   inputs_reg:  none
  *   inputs_ram:  none
  *   output_ram:  $3C..$48 (transfer params), VRAM as side effect
- *   entry_mode:  mf=true, xf=false, dp=0x0, db=0x00
+ *   entry_mode:  mf=true, xf=false, dp=0x600, db=0x00
  *   entry_flags: z=auto, n=auto
  * REVERSED_FUNCTION: field::_00883d ($00:883D) - "load title screen bg graphics"
  */
