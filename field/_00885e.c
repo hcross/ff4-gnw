@@ -28,14 +28,22 @@ void _00885e_c(Snes *snes) {
     /* VMAINC = $80: VMADDR auto-increments after each $2119 write. */
     snes_writeBBus(snes, 0x15, 0x80);
 
-    /* Set VRAM destination from zero page $47/$48. */
-    uint16_t vram_dest = (uint16_t)ram[0x47] | ((uint16_t)ram[0x48] << 8);
+    /* Params ($47/$48 dest, $3D/$3E src offset) are DIRECT-PAGE addressed:
+     * the caller (ShowTitle) sets them with `sta $47` / `stx $3d` under
+     * D=$0600, so they live at $0647.. / $063D.. — not absolute zero page.
+     * Read (and below, write back the advanced $3D) relative to D, or the
+     * crystal streams from a stale offset to the wrong VRAM page. */
+    uint16_t d = snes->cpu->dp;
+    #define DP(off) ram[(uint16_t)(d + (off))]
+
+    /* Set VRAM destination from direct-page $47/$48. */
+    uint16_t vram_dest = (uint16_t)DP(0x47) | ((uint16_t)DP(0x48) << 8);
     snes_writeBBus(snes, 0x16, (uint8_t)(vram_dest & 0xFF));
     snes_writeBBus(snes, 0x17, (uint8_t)((vram_dest >> 8) & 0xFF));
 
     /* Source = bank $08, offset $3D. Loop transfers 8 bytes (4 tile-rows,
      * each row being one VRAM word = 2 bytes). */
-    uint16_t src_off = (uint16_t)ram[0x3D] | ((uint16_t)ram[0x3E] << 8);
+    uint16_t src_off = (uint16_t)DP(0x3D) | ((uint16_t)DP(0x3E) << 8);
     uint32_t src_base = (0x08u << 16) | src_off;
     for (int i = 0; i < 4; i++) {
         uint8_t lo = snes_read(snes, (src_base + 2 * i) & 0xFFFFFF);
@@ -44,9 +52,11 @@ void _00885e_c(Snes *snes) {
         snes_writeBBus(snes, 0x19, hi);
     }
 
-    /* Advance source pointer by 8 (the original does a 16-bit ADC). */
+    /* Advance source pointer by 8 (the original does a 16-bit ADC). Write it
+     * back DP-relative so the next row continues from here. */
     uint16_t new_off = src_off + 8;
-    write16(ram, 0x3D, new_off);
+    write16(ram, (uint16_t)(d + 0x3D), new_off);
+    #undef DP
 
     /* Tail of original asm:
      *   TDC / XBA / SEP #$20    (A8 = 0)
@@ -64,7 +74,7 @@ void _00885e_c(Snes *snes) {
  *   inputs_reg:  none
  *   inputs_ram:  $3D/$3E (src offset), $47/$48 (VRAM dest)
  *   output_ram:  $3D/$3E (advanced by 8), VRAM as side effect
- *   entry_mode:  mf=true, xf=false, dp=0x0, db=0x00
+ *   entry_mode:  mf=true, xf=false, dp=0x600, db=0x00
  *   entry_flags: z=auto, n=auto
  * REVERSED_FUNCTION: field::_00885e ($00:885E) - "transfer 1 row of crystal"
  */
