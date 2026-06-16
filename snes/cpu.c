@@ -2503,3 +2503,46 @@ static void cpu_doOpcode(Cpu* cpu, uint8_t opcode) {
     }
   }
 }
+
+#ifdef FF4_PORT_STATIC_SNES
+/* Interpreter-delegation bridge for the FF4 static-port dispatch.
+ *
+ * A dispatched C routine calls run_emulated_func(snes, addr) to execute an
+ * un-ported SNES subroutine at `addr` in the interpreter and return when it
+ * RTS/RTLs. This lets a ported hot routine delegate its cold sub-calls back
+ * to the faithful interpreter (which drives DMA/PPU/APU through the normal
+ * register paths) instead of a no-op stub. Any nested dispatch hits during
+ * the run are handled normally by the JSR/JSL hooks.
+ *
+ * Return is detected by a stack-pointer watermark, which works whether the
+ * callee ends in RTS (intra-bank, pulls 2 bytes) or RTL (long, pulls 3): we
+ * push a 3-byte JSL-style frame pointing back at the caller's k:pc, run
+ * opcodes until the SP has unwound to within one byte of its pre-push level,
+ * then normalise k/pc/sp (covering the RTS case that leaves the bank byte on
+ * the stack). A balanced callee only crosses that threshold at its final
+ * return. The opcode guard is a host-hang backstop, not a functional limit. */
+extern void ff4_port_wdog_refresh(void);
+void run_emulated_func(Snes *snes, uint32_t addr) {
+  Cpu *cpu = snes->cpu;
+  uint8_t  ret_k  = cpu->k;
+  uint16_t ret_pc = cpu->pc;
+  uint16_t sp0    = cpu->sp;
+
+  cpu_pushByte(cpu, ret_k);
+  cpu_pushWord(cpu, (uint16_t)(ret_pc - 1), false);
+  cpu->k  = (uint8_t)((addr >> 16) & 0xff);
+  cpu->pc = (uint16_t)(addr & 0xffff);
+
+  unsigned pet = 0;
+  unsigned long guard = 0;
+  while ((uint16_t)(sp0 - cpu->sp) >= 2u) {
+    cpu_runOpcode(cpu);
+    if ((++pet & (4096u - 1u)) == 0u) ff4_port_wdog_refresh();
+    if (++guard > 50000000UL) break;
+  }
+
+  cpu->k  = ret_k;
+  cpu->pc = ret_pc;
+  cpu->sp = sp0;
+}
+#endif

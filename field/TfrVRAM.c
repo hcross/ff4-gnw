@@ -1,28 +1,24 @@
 #include "snes/snes.h"
+#include "dispatch_all.h"
 
-// ADR-003 delegate: routine too complex for direct translation.
-// The previous translation failed because hardware register addresses (hVMAINC, etc.) 
-// were guessed as 0x00-0x09. In a real SNES, these are mapped to specific 
-// memory-mapped I/O ranges (e.g., $21xx), not the start of WRAM.
-// Since the exact mapping for these macros is not provided in the prompt,
-// the only way to maintain parity is to execute the original assembly via the emulator.
+/* TfrVRAM ($CA85) and _15ca85 ($15:CA85) are the SAME "transfer data to VRAM"
+ * routine, reached via different LoROM bank encodings (the dispatch table
+ * carries both $01:CA85 -> TfrVRAM_c and $15:CA85 -> _15ca85_c). _15ca85_c is
+ * the working direct C port: it reads the source/dest/size params from
+ * zero-page ($3C/$3D src bank+addr, $47 VRAM dest, $45 size) and streams to
+ * VRAM via snes_writeBBus ($2116/$2118/$2119).
+ *
+ * The title screen reaches THIS entry via `jsl TfrVRAM` (title_jp.asm) to load
+ * the "FINAL FANTASY IV" logo tilemap from $08:E800 to VRAM $1880 (and the
+ * second half to $3080). The previous body delegated to
+ * run_emulated_func(0x00CA85) — the wrong bank ($00 instead of the linked
+ * $15) — so the logo tilemap never transferred and BG1/BG2 stayed on the
+ * $00DF clear fill. Delegate to the proven port instead. */
 void TfrVRAM_c(Snes *snes) {
-    Cpu *c = snes->cpu;
-    c->dp = 0x00;
-    c->db = 0x00;
-    c->mf = true;  // A 8-bit
-    c->xf = false; // X 16-bit
-    
-    // The routine starts with `lda #$80`, so no entry flags need to be simulated.
-    run_emulated_func(snes, 0x00CA85u);
+    _15ca85_c(snes);
 }
 
-// PITFALLS: 1 (DB=0 used for hardware registers), 6 (Inherited mode A=8, X=16)
-// HELPERS: run_emulated_func
 // CONTRACT:
-//   inputs_reg:  a=none, x=none, y=none
-//   inputs_ram:  0x3C=1, 0x47=2, 0x3D=2, 0x45=2
-//   output_ram:  none (Writes to HW registers outside WRAM range)
-//   entry_mode:  mf=true, xf=false, dp=0x0, db=0x0
-//   entry_flags: z=auto, n=auto
-// DELEGATED_FUNCTION: field::TfrVRAM ($00:CA85)
+//   inputs_ram:  0x3C=1, 0x3D=2 (src bank:addr), 0x47=2 (VRAM dest), 0x45=2 (size)
+//   output:      PPU VRAM (via snes_writeBBus)
+// REVERSED_FUNCTION: field::TfrVRAM ($CA85) == field::_15ca85 ($15:CA85)
