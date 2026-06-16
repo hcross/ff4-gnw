@@ -99,18 +99,25 @@ __attribute__((weak)) void tfr_water_gfx_emu(Snes *snes) { (void)snes; }
  * \$portAutoRead[0] with the 16-bit ctrl 1 word during the emulated
  * VBlank. We side-step the full mapping pass (the default identity
  * mapping is sufficient to advance the title screen) and just stream
- * the raw button bits into the zero-page mirrors. The byte order
+ * the raw button bits into the controller mirrors. The byte order
  * matches the title-screen reader (\$15:CA1D):
  *
- *   ram[\$02] = low byte (\$4218):  A X L R 0 0 0 0
- *   ram[\$03] = high byte (\$4219): B Y Sel Start Up Down Left Right
+ *   ctrl[\$02] = low byte (\$4218):  A X L R 0 0 0 0
+ *   ctrl[\$03] = high byte (\$4219): B Y Sel Start Up Down Left Right
  *
  * Ctrl 1 (\$00/\$01) and ctrl 2 (\$02/\$03) get the same bits — the
  * G&W has a single joypad and the title only checks one side.
  *
- * f:\$000140 mirror of the disable-multi-controller flag also gets
- * cleared to match the asm prologue, otherwise a later FF4 menu
- * subroutine reads stale data. */
+ * DIRECT PAGE: the real UpdateCtrl (\$14:FD12) does `PLD` to restore the
+ * CALLER's direct-page register *before* its final `STA \$00` / `STA \$02`,
+ * so the mirror lands at (D + \$00..\$03). FF4's NMI and title both run with
+ * D=\$0600, and the title reads the A bit via `LDA \$02` at \$00:8705 — i.e.
+ * \$0602, not absolute \$0002. Writing absolute \$00..\$03 dropped the input
+ * one direct page too low, so the title never saw A and stayed on the logo.
+ * Honour D (= snes->cpu->dp at dispatch entry, the NMI's DP at the JSL).
+ *
+ * f:\$000140 mirror of the disable-multi-controller flag is an absolute
+ * long store in the asm (DP-independent), so it stays at \$0140. */
 void update_ctrl_field_emu(Snes *snes) {
     if (snes == 0 || snes->input1 == 0) return;
 
@@ -118,12 +125,13 @@ void update_ctrl_field_emu(Snes *snes) {
     uint8_t  lo = (uint8_t)(port1 & 0xFF);
     uint8_t  hi = (uint8_t)((port1 >> 8) & 0xFF);
 
-    snes->ram[0x00] = lo;
-    snes->ram[0x01] = hi;
-    snes->ram[0x02] = lo;
-    snes->ram[0x03] = hi;
+    uint16_t d = snes->cpu->dp;
+    snes->ram[(uint16_t)(d + 0x00)] = lo;
+    snes->ram[(uint16_t)(d + 0x01)] = hi;
+    snes->ram[(uint16_t)(d + 0x02)] = lo;
+    snes->ram[(uint16_t)(d + 0x03)] = hi;
 
-    /* f:\$000140 is in bank \$00 WRAM mirror — the same 128 KB array. */
+    /* f:\$000140 is an absolute long store — bank \$00 WRAM, DP-independent. */
     snes->ram[0x0140] = 0x00;
 }
 
