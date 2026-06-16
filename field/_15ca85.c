@@ -30,18 +30,28 @@ void _15ca85_c(Snes *snes) {
     /* VMAINC = $80: VMADD auto-increments by 1 after each $2119 write. */
     snes_writeBBus(snes, 0x15, 0x80);
 
-    /* Set VRAM destination from zero-page word at $47. */
-    uint16_t vram_dest = (uint16_t)ram[0x47] | ((uint16_t)ram[0x48] << 8);
+    /* Params are DIRECT-PAGE addressed: the caller uses `stx $47` etc., which
+     * targets $00:(D+$47) where D is the 65816 direct-page register. FF4's
+     * title (ShowTitle) runs with D=$0600, so the params live at $0647.. not
+     * $0047 — reading absolute $0047 picked up stale values (e.g. the prior
+     * gfx transfer's $4000) and sent the logo tilemap to the wrong VRAM page.
+     * Honour D. (Direct page wraps within bank $00 = the first 64 KB of WRAM.) */
+    uint16_t d = snes->cpu->dp;
+    #define DP(off) ram[(uint16_t)(d + (off))]
+
+    /* Set VRAM destination from direct-page word at $47. */
+    uint16_t vram_dest = (uint16_t)DP(0x47) | ((uint16_t)DP(0x48) << 8);
     snes_writeBBus(snes, 0x16, (uint8_t)(vram_dest & 0xFF));
     snes_writeBBus(snes, 0x17, (uint8_t)((vram_dest >> 8) & 0xFF));
 
     /* Source address: bank at $3C, addr at $3D/$3E. */
-    uint8_t  src_bank = ram[0x3C];
-    uint16_t src_addr = (uint16_t)ram[0x3D] | ((uint16_t)ram[0x3E] << 8);
+    uint8_t  src_bank = DP(0x3C);
+    uint16_t src_addr = (uint16_t)DP(0x3D) | ((uint16_t)DP(0x3E) << 8);
     uint32_t src = ((uint32_t)src_bank << 16) | src_addr;
 
-    /* Size in bytes from zero-page word at $45. */
-    uint16_t size = (uint16_t)ram[0x45] | ((uint16_t)ram[0x46] << 8);
+    /* Size in bytes from direct-page word at $45. */
+    uint16_t size = (uint16_t)DP(0x45) | ((uint16_t)DP(0x46) << 8);
+    #undef DP
 
     /* Stream bytes alternating low/high to VMDATAL/VMDATAH. */
     for (uint16_t i = 0; i < size; i += 2) {
