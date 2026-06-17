@@ -295,6 +295,24 @@ void ppu_handleFrameStart(Ppu* ppu) {
 #endif
 }
 
+/* Per-scanline BG fetch cache. ppu_getPixelForBgLayer is called once per
+ * pixel per layer, but the tilemap word and the bitplane words it reads from
+ * VRAM are identical across the 8 horizontal pixels of a tile span (only the
+ * column bit-extraction varies). Memoise the two/four VRAM reads keyed on the
+ * exact masked address they target. Valid only within one ppu_runLine call:
+ * VRAM is stable for the whole scanline (the CPU runs between lines, not
+ * mid-line), and the key is the real address read, so a hit always returns the
+ * same bytes the uncached path would. Reset (sentinel 0xFFFF > 0x7FFF max) at
+ * the top of every scanline. Cuts ~7/8 of BG-layer VRAM fetches in-game. */
+static uint16_t s_bgTilemapAdr[4];
+static uint16_t s_bgTile[4];
+static uint16_t s_bgPlaneAdr[4];
+static uint16_t s_bgPlane[4][4];
+
+static inline void ppu_resetBgCache(void) {
+  for(int i = 0; i < 4; i++) { s_bgTilemapAdr[i] = 0xFFFF; s_bgPlaneAdr[i] = 0xFFFF; }
+}
+
 void ppu_runLine(Ppu* ppu, int line) {
   // called for lines 1-224/239
   // evaluate sprites
@@ -302,6 +320,7 @@ void ppu_runLine(Ppu* ppu, int line) {
   if(!ppu->forcedBlank) ppu_evaluateSprites(ppu, line - 1);
   // actual line
   if(ppu->mode == 7) ppu_calculateMode7Starts(ppu, line);
+  ppu_resetBgCache();
   for(int x = 0; x < 256; x++) {
     ppu_handlePixel(ppu, x, line);
   }
@@ -502,7 +521,15 @@ static int ppu_getPixelForBgLayer(Ppu* ppu, int x, int y, int layer, bool priori
   uint16_t tilemapAdr = ppu->bgLayer[layer].tilemapAdr + (((y >> tileBitsY) & 0x1f) << 5 | ((x >> tileBitsX) & 0x1f));
   if((x & tileHighBitX) && ppu->bgLayer[layer].tilemapWider) tilemapAdr += 0x400;
   if((y & tileHighBitY) && ppu->bgLayer[layer].tilemapHigher) tilemapAdr += ppu->bgLayer[layer].tilemapWider ? 0x800 : 0x400;
-  uint16_t tile = ppu->vram[tilemapAdr & 0x7fff];
+  uint16_t tmAdr = tilemapAdr & 0x7fff;
+  uint16_t tile;
+  if(s_bgTilemapAdr[layer] == tmAdr) {
+    tile = s_bgTile[layer];
+  } else {
+    tile = ppu->vram[tmAdr];
+    s_bgTilemapAdr[layer] = tmAdr;
+    s_bgTile[layer] = tile;
+  }
   // check priority, get palette
   if(((bool) (tile & 0x2000)) != priority) return 0; // wrong priority
   int paletteNum = (tile & 0x1c00) >> 10;
@@ -521,25 +548,42 @@ static int ppu_getPixelForBgLayer(Ppu* ppu, int x, int y, int layer, bool priori
   // read tiledata, ajust palette for mode 0
   int bitDepth = bitDepthsPerMode[ppu->mode][layer];
   if(ppu->mode == 0) paletteNum += 8 * layer;
-  // plane 1 (always)
   int paletteSize = 4;
-  uint16_t plane1 = ppu->vram[(ppu->bgLayer[layer].tileAdr + ((tileNum & 0x3ff) * 4 * bitDepth) + row) & 0x7fff];
+  // The plane words (8 horizontal pixels each) are constant across a tile
+  // span; fetch them once per (layer, tileNum, row) and memoise — keyed on
+  // the masked plane-1 address (planes 2-4 are at fixed +8/+16/+24 offsets
+  // derived from the same base, so the same key covers them). Only the per-
+  // pixel bit-extraction below runs every pixel.
+  uint16_t planeAdr = (ppu->bgLayer[layer].tileAdr + ((tileNum & 0x3ff) * 4 * bitDepth) + row) & 0x7fff;
+  uint16_t plane1, plane2 = 0, plane3 = 0, plane4 = 0;
+  if(s_bgPlaneAdr[layer] == planeAdr) {
+    plane1 = s_bgPlane[layer][0]; plane2 = s_bgPlane[layer][1];
+    plane3 = s_bgPlane[layer][2]; plane4 = s_bgPlane[layer][3];
+  } else {
+    plane1 = ppu->vram[planeAdr];
+    if(bitDepth > 2) plane2 = ppu->vram[(planeAdr + 8) & 0x7fff];
+    if(bitDepth > 4) {
+      plane3 = ppu->vram[(planeAdr + 16) & 0x7fff];
+      plane4 = ppu->vram[(planeAdr + 24) & 0x7fff];
+    }
+    s_bgPlaneAdr[layer] = planeAdr;
+    s_bgPlane[layer][0] = plane1; s_bgPlane[layer][1] = plane2;
+    s_bgPlane[layer][2] = plane3; s_bgPlane[layer][3] = plane4;
+  }
+  // plane 1 (always)
   int pixel = (plane1 >> col) & 1;
   pixel |= ((plane1 >> (8 + col)) & 1) << 1;
   // plane 2 (for 4bpp, 8bpp)
   if(bitDepth > 2) {
     paletteSize = 16;
-    uint16_t plane2 = ppu->vram[(ppu->bgLayer[layer].tileAdr + ((tileNum & 0x3ff) * 4 * bitDepth) + 8 + row) & 0x7fff];
     pixel |= ((plane2 >> col) & 1) << 2;
     pixel |= ((plane2 >> (8 + col)) & 1) << 3;
   }
   // plane 3 & 4 (for 8bpp)
   if(bitDepth > 4) {
     paletteSize = 256;
-    uint16_t plane3 = ppu->vram[(ppu->bgLayer[layer].tileAdr + ((tileNum & 0x3ff) * 4 * bitDepth) + 16 + row) & 0x7fff];
     pixel |= ((plane3 >> col) & 1) << 4;
     pixel |= ((plane3 >> (8 + col)) & 1) << 5;
-    uint16_t plane4 = ppu->vram[(ppu->bgLayer[layer].tileAdr + ((tileNum & 0x3ff) * 4 * bitDepth) + 24 + row) & 0x7fff];
     pixel |= ((plane4 >> col) & 1) << 6;
     pixel |= ((plane4 >> (8 + col)) & 1) << 7;
   }
