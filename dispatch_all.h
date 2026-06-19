@@ -211,3 +211,4 @@ extern uint32_t ff4_dispatch_hits;
 extern uint32_t ff4_dispatch_misses;
 extern int ff4_dispatch_enabled;  /* 1=native dispatch (device default), 0=pure interpreter */
 extern void (*ff4_dispatch_trace)(uint32_t pc);  /* NULL on device; A/B oracle per-hit trace hook */
+extern int  (*ff4_dispatch_filter)(uint32_t pc); /* NULL on device; return 0 to force interpretation of a hook */

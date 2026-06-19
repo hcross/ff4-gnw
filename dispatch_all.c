@@ -228,6 +228,14 @@ int ff4_dispatch_enabled = 1;
  * each hit, so the first diverging frame can be attributed to a concrete hook. */
 void (*ff4_dispatch_trace)(uint32_t pc) = 0;
 
+/* Optional per-hook filter (desktop A/B oracle, ADR 0001 / M3). NULL on device.
+ * When set, a matched hook runs natively only if the filter returns non-zero;
+ * otherwise the call falls through to pure interpretation. Lets the oracle
+ * exclude intentionally-divergent routines (e.g. the _15cadc OAM-DMA bypass)
+ * so they stop contaminating the comparison and the remaining faithful ports
+ * can be checked against ground truth. */
+int (*ff4_dispatch_filter)(uint32_t pc) = 0;
+
 #ifdef FF4_AUTOBOOT
 uint32_t g_diag_miss_ring[8] = {0};
 static uint8_t g_diag_miss_ring_head = 0;
@@ -239,6 +247,8 @@ int ff4_dispatch_try(Snes *snes, uint32_t pc) {
      * original pc, then rewrites banks, leaving the table unsorted). */
     for (int i = 0; i < FF4_DISPATCH_COUNT; i++) {
         if (ff4_dispatch_table[i].pc == pc) {
+            if (ff4_dispatch_filter && !ff4_dispatch_filter(pc))
+                return 0;  /* excluded: fall through to pure interpretation */
             ff4_dispatch_hits++;
             if (ff4_dispatch_trace) ff4_dispatch_trace(pc);
             ff4_dispatch_table[i].fn(snes);
