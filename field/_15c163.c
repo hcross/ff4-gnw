@@ -36,9 +36,12 @@
  *     boot sequence, not here.
  */
 void _15c163_c(Snes *snes) {
+    /* asm: LDA $1700 / CMP #$03 / BNE body / RTL — i.e. the body runs when
+     * $1700 != 3 and returns when == 3 (the port had this branch INVERTED,
+     * F7: it ran the mode-7 setup exactly when it should have skipped it). */
     uint8_t map_id = snes->ram[0x1700];
-    if (map_id != 3) {
-        return;  /* early-out for title-pre-init / battle / dialog */
+    if (map_id == 3) {
+        return;
     }
 
     /* Reset mode 7 matrix B and C (off-diagonal - disables rotation/shear).
@@ -53,10 +56,14 @@ void _15c163_c(Snes *snes) {
     snes->ram[0x15A00] = 0xF0;
     snes->ram[0x15A03] = 0xF0;
 
-    /* Zoom scale computed from player Y position ($AD) and vehicle ($1704).
-     * Vehicle 6 == big whale uses a different bias. */
+    /* Zoom scale computed from player Y position and vehicle ($1704).
+     * Vehicle 6 == big whale uses a different bias.
+     * `lda $ad` is a DIRECT-PAGE load: effective addr = [D + $AD]. The field
+     * engine enters with D=$0600, so this is $00:06AD, not $00:00AD. Honour
+     * the live DP (F7: the port previously hardcoded ram[0xAD] -> wrong RAM,
+     * diverging $7F:5A02/5A05). */
     uint8_t vehicle = snes->ram[0x1704];
-    uint8_t pos_a   = snes->ram[0xAD];
+    uint8_t pos_a   = snes->ram[(uint16_t)(snes->cpu->dp + 0xAD)];
     uint8_t v;
     if (vehicle == 0x06) {
         v = (uint8_t)(((pos_a - 0x10) & 0xFE) + 0x22);
