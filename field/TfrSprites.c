@@ -1,62 +1,56 @@
 #include "snes/snes.h"
 
-// Entry mode: A 8-bit (mf=1), X 16-bit (xf=0), DB=$FE, DP=0
-// This routine configures DMA transfers for sprites (OAM).
-// If ram[0xf42b] is non-zero, it skips the configuration.
-// Otherwise, it sets up the DMA source/destination and handles priority shifting.
+// field::TfrSprites ($FE:03) — refresh OAM from the $0300 shadow buffer.
+//
+// Entry mode: A 8-bit (mf=1), X 16-bit (xf=0), DB=$FE, DP=0.
+// Skips if ram[$F42B] != 0. Otherwise transfers the 544-byte OAM shadow at
+// $00:0300 to PPU OAM, then optionally applies the sprite priority rotation.
+//
+// This is the SAME OAM blast as field::_15cadc ($CA:DC). Like that routine, the
+// transfer is a manual $2104 (OAMDATA) loop rather than the original's DMA-
+// channel-0 setup + MDMAEN trigger: the LakeSnes DMA path (dma_startDma ->
+// snes_syncCycles) is incompatible with savestate-resumed APU state and
+// hardfaults on device (see desktop/KNOWN_FINDINGS.md F3). The PPU auto-
+// increments the OAM word address on each $2104 write, so the loop is
+// equivalent to a DMA mode-0 transfer over 0x220 bytes.
+//
+// NOTE: the previous port wrote the DMA params into snes->ram[0x4340..0x4347]
+// (WRAM $7E:4340) — those are CPU I/O DMA registers, NOT WRAM — so it both
+// corrupted WRAM and never ran the transfer; it also read ram[0x7ef28a], a
+// 128 KB-out-of-bounds index ($7E:F28A is WRAM offset 0xF28A). Both fixed here
+// (desktop oracle finding F6).
 void TfrSprites_c(Snes *snes) {
     uint8_t *ram = snes->ram;
 
-    if (ram[0xf42b] != 0) { // bne @fe45
+    if (ram[0xF42B] != 0) {  // bne @fe45 — caller asked to skip the refresh
         return;
     }
 
-    // Note: phb / clr_a / pha / plb is a 65816 idiom to clear A
-    // without disturbing the B register's state relative to the stack.
-    // Effectively: A = 0.
-
-    // hOAMADDL (likely 0x4341 based on common SNES DMA patterns, 
-    // but we use absolute addresses as per ASM)
-    // In the ASM: stx hOAMADDL where X was #0
-    write16(ram, 0x4341, 0); // hOAMADDL = 0
-
-    ram[0x4340] = 0x00;      // stx $4340 (X = $0400, but stx is 8-bit if X is used as 8-bit)
-    ram[0x4341] = 0x04;      // Since X was #$0400, write16(ram, 0x4340, 0x0400)
-    
-    // The ASM does:
-    // ldx #$0400 / stx $4340 -> write16(ram, 0x4340, 0x0400)
-    // ldx #$0300 / stx $4342 -> write16(ram, 0x4342, 0x0300)
-    write16(ram, 0x4340, 0x0400);
-    write16(ram, 0x4342, 0x0300);
-
-    ram[0x4344] = 0;         // sta $4344 (clr_a)
-    ram[0x4347] = 0;         // sta $4347
-
-    write16(ram, 0x4345, 0x0220); // ldx #$0220 / stx $4345
-
-    // hMDMAEN (DMA Enable register)
-    ram[0x4343] = 0x10;      // sta hMDMAEN (assuming hMDMAEN is 0x4343)
-
-    // Priority order shifting check
-    // ram[0x7ef28a] is an absolute address in the $7E bank
-    uint8_t priority_val = ram[0x7ef28a];
-    if (priority_val < 0x80) { // bpl @fe44 (Positive/Zero if bit 7 is 0)
-        return;
+    // Reset the OAM word address, then stream the 544-byte shadow to OAMDATA.
+    snes_writeBBus(snes, 0x02, 0x00);  // $2102 OAMADDL = 0
+    snes_writeBBus(snes, 0x03, 0x00);  // $2103 OAMADDH = 0
+    const uint8_t *src = &ram[0x0300];
+    for (int i = 0; i < 0x0220; i++) {
+        snes_writeBBus(snes, 0x04, src[i]);  // $2104 OAMDATA (auto-increments)
     }
 
-    // Set highest priority sprite address
-    // hOAMADDH is usually the high byte of the OAM address
-    ram[0x4342] = priority_val; // sta hOAMADDH (assuming 0x4342)
-    ram[0x4341] = ram[0x7ef289]; // sta hOAMADDL (assuming 0x4341)
+    // Priority-order shifting: if the high mirror byte has bit 7 set, repoint
+    // the OAM address at the rotated sprite ($7E:F289/F28A hold OAMADDL/H).
+    uint8_t pr_hi = ram[0xF28A];
+    if (pr_hi < 0x80) {  // bpl @fe44
+        return;
+    }
+    snes_writeBBus(snes, 0x03, pr_hi);        // $2103 OAMADDH
+    snes_writeBBus(snes, 0x02, ram[0xF289]);  // $2102 OAMADDL
 }
 
-// PITFALLS: 1 (DB=$FE), 6 (Mode A 8-bit vs 16-bit for lda $f42b), 
-// 7 (Truncation not applicable here as we use direct assignments)
-// HELPERS: none
+// PITFALLS: 1 (DB=$FE), 6 (A 8-bit vs X 16-bit), 8 (DMA mid-frame -> manual loop)
+// HELPERS: snes_writeBBus (core LakeSnes API)
 // CONTRACT:
-//   inputs_reg:  a=none, x=none, y=none
-//   inputs_ram:  0xf42b=1, 0x7ef28a=1, 0x7ef289=1
-//   output_ram:  0x4340=2, 0x4342=2, 0x4344=1, 0x4345=2, 0x4347=1
+//   inputs_reg:  none (writes constants / shadow bytes)
+//   inputs_ram:  $00:0300..$00:051F (OAM shadow, 544 B); $7E:F42B (skip flag);
+//                $7E:F289/F28A (priority rotation OAM address)
+//   output_ram:  none (writes PPU OAM directly via $2104/$2102/$2103)
 //   entry_mode:  mf=true, xf=false, dp=0x0, db=0xFE
 //   entry_flags: z=auto, n=auto
 // REVERSED_FUNCTION: field::TfrSprites ($FE:03)
