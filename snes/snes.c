@@ -159,6 +159,26 @@ void snes_runFrame(Snes* snes) {
   snes_catchupApu(snes); // catch up the apu after running
 }
 
+// Like snes_runFrame but bounded by a CPU-opcode budget. Returns true if the
+// frame completed, false if max_ops was hit first (a stall/hang). Used by the
+// desktop A/B oracle (ADR 0001 / M3) so a native-side combat hang surfaces as a
+// bounded divergence at a known frame instead of freezing the host. Device
+// build never calls it; behaviour there is unchanged.
+bool snes_runFrameBounded(Snes* snes, uint64_t max_ops) {
+  uint64_t ops = 0;
+  while(snes->inVblank) {
+    cpu_runOpcode(snes->cpu);
+    if(++ops >= max_ops) return false;
+  }
+  uint32_t frame = snes->frames;
+  while(!snes->inVblank && frame == snes->frames) {
+    cpu_runOpcode(snes->cpu);
+    if(++ops >= max_ops) return false;
+  }
+  snes_catchupApu(snes);
+  return true;
+}
+
 void snes_runCycles(Snes* snes, int cycles) {
   if(snes->hPos + cycles >= 536 && snes->hPos < 536) {
     // if we go past 536, add 40 cycles for dram refersh

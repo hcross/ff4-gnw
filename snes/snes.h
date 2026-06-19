@@ -66,6 +66,7 @@ void snes_free(Snes* snes);
 void snes_reset(Snes* snes, bool hard);
 void snes_handleState(Snes* snes, StateHandler* sh);
 void snes_runFrame(Snes* snes);
+bool snes_runFrameBounded(Snes* snes, uint64_t max_ops); // desktop A/B oracle (M3): false if max_ops hit
 // used by dma, cpu
 void snes_runCycles(Snes* snes, int cycles);
 void snes_syncCycles(Snes* snes, bool start, int syncCycles);
