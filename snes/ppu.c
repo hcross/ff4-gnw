@@ -384,6 +384,14 @@ static void ppu_handlePixel(Ppu* ppu, int x, int y) {
     }
   }
   int row = (y - 1) + (ppu->evenFrame ? 0 : 239);
+#ifdef FF4_PORT_STATIC_SNES
+  /* The G&W pixelBuffer holds only 224 rows (512*4*224). A vblank-edge race can
+   * call ppu_runLine for line 225 (-> row 224), one row past the end, which
+   * corrupts the adjacent Snes (observed clobbering snes->dma -> crash in
+   * dma_handleDma when the next DMA fires). Clamp to the buffer; non-visible
+   * lines must not be rendered anyway. */
+  if (row < 0 || row >= 224) return;
+#endif
   ppu->pixelBuffer[row * 2048 + x * 8 + 0 + ppu->pixelOutputFormat] = ((b2 << 3) | (b2 >> 2)) * ppu->brightness / 15;
   ppu->pixelBuffer[row * 2048 + x * 8 + 1 + ppu->pixelOutputFormat] = ((g2 << 3) | (g2 >> 2)) * ppu->brightness / 15;
   ppu->pixelBuffer[row * 2048 + x * 8 + 2 + ppu->pixelOutputFormat] = ((r2 << 3) | (r2 >> 2)) * ppu->brightness / 15;
