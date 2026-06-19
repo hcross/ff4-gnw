@@ -222,6 +222,12 @@ uint32_t ff4_miss_per_bank[256] = {0};
  * The device never clears it, so on-device behaviour is unchanged. */
 int ff4_dispatch_enabled = 1;
 
+/* Optional per-hit trace hook (desktop A/B oracle, ADR 0001 / M3). NULL on the
+ * device, so the only on-device cost is one predictably-not-taken NULL check.
+ * The oracle installs a callback to record which original PC was dispatched on
+ * each hit, so the first diverging frame can be attributed to a concrete hook. */
+void (*ff4_dispatch_trace)(uint32_t pc) = 0;
+
 #ifdef FF4_AUTOBOOT
 uint32_t g_diag_miss_ring[8] = {0};
 static uint8_t g_diag_miss_ring_head = 0;
@@ -234,6 +240,7 @@ int ff4_dispatch_try(Snes *snes, uint32_t pc) {
     for (int i = 0; i < FF4_DISPATCH_COUNT; i++) {
         if (ff4_dispatch_table[i].pc == pc) {
             ff4_dispatch_hits++;
+            if (ff4_dispatch_trace) ff4_dispatch_trace(pc);
             ff4_dispatch_table[i].fn(snes);
             return 1;
         }
