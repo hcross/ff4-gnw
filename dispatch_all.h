@@ -209,3 +209,4 @@ extern const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT];
 int ff4_dispatch_try(Snes *snes, uint32_t pc);
 extern uint32_t ff4_dispatch_hits;
 extern uint32_t ff4_dispatch_misses;
+extern int ff4_dispatch_enabled;  /* 1=native dispatch (device default), 0=pure interpreter */

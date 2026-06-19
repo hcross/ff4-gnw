@@ -216,12 +216,19 @@ uint32_t ff4_dispatch_hits = 0;
 uint32_t ff4_dispatch_misses = 0;
 uint32_t ff4_miss_per_bank[256] = {0};
 
+/* Runtime A/B toggle (desktop validation host, ADR 0001). Default 1 = native
+ * dispatch active, exactly as the device runs. The desktop oracle sets it to 0
+ * to fall back to pure interpretation (ground truth) on the same binary/state.
+ * The device never clears it, so on-device behaviour is unchanged. */
+int ff4_dispatch_enabled = 1;
+
 #ifdef FF4_AUTOBOOT
 uint32_t g_diag_miss_ring[8] = {0};
 static uint8_t g_diag_miss_ring_head = 0;
 #endif
 
 int ff4_dispatch_try(Snes *snes, uint32_t pc) {
+    if (!ff4_dispatch_enabled) return 0;  /* pure-interpreter side of the A/B */
     /* Linear scan (binary search was unreliable: gen_dispatch.py sorts by the
      * original pc, then rewrites banks, leaving the table unsorted). */
     for (int i = 0; i < FF4_DISPATCH_COUNT; i++) {
