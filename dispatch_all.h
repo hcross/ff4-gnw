@@ -29,7 +29,9 @@ void ExecBattle_c(Snes *snes);
 void DrawMP_c(Snes *snes);
 void ExecBtlGfx_c(Snes *snes);
 void InitHWRegs_c(Snes *snes);
+void RandXA_c(Snes *snes);
 void Mult16_c(Snes *snes);
+void Mult8_c(Snes *snes);
 void Div16_c(Snes *snes);
 void Add16_c(Snes *snes);
 void Sub16_c(Snes *snes);
@@ -204,7 +206,7 @@ void UpdateLocalTiles_c(Snes *snes);
 void BoardChoco_c(Snes *snes);
 
 typedef struct { uint32_t pc; void (*fn)(Snes *snes); } ff4_dispatch_entry_t;
-#define FF4_DISPATCH_COUNT 199
+#define FF4_DISPATCH_COUNT 201
 extern const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT];
 int ff4_dispatch_try(Snes *snes, uint32_t pc);
 extern uint32_t ff4_dispatch_hits;

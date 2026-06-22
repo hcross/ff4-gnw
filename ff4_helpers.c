@@ -1,4 +1,5 @@
 #include "ff4_helpers.h"
+#include "dispatch_all.h"  /* Mult8_c, Mult16_c, Div16_c, RandXA_c, Rand99_c */
 
 uint16_t read16(const uint8_t *ram, int addr) { return (uint16_t)ram[addr] | ((uint16_t)ram[addr + 1] << 8); }
 void write16(uint8_t *ram, int addr, uint16_t v) { ram[addr]=(uint8_t)(v&0xff); ram[addr+1]=(uint8_t)((v>>8)&0xff); }
@@ -14,9 +15,9 @@ __attribute__((weak)) void InitHWRegs_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void InitInterrupts_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void LoadMap_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void LoadNPCGfx_emu(Snes *snes) { (void)snes; }
-__attribute__((weak)) void Rand99_emu(Snes *snes) { (void)snes; }
+void Rand99_emu(Snes *snes) { Rand99_c(snes); }        /* F1: was no-op weak stub */
 __attribute__((weak)) void RandAITarget_emu(Snes *snes) { (void)snes; }
-__attribute__((weak)) void RandXA_emu(Snes *snes) { (void)snes; }
+void RandXA_emu(Snes *snes) { RandXA_c(snes); }        /* F1: was no-op weak stub */
 __attribute__((weak)) void SetMagicStatus2_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void SkipAITurn_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void SleepParalyzeEffect_emu(Snes *snes) { (void)snes; }
@@ -45,7 +46,7 @@ __attribute__((weak)) void check_strong_elem_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void check_timer_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void check_weak_elem_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void clear_text_emu(Snes *snes) { (void)snes; }
-__attribute__((weak)) void div16_emu(Snes *snes) { (void)snes; }
+void div16_emu(Snes *snes) { Div16_c(snes); }           /* F1: was no-op weak stub */
 __attribute__((weak)) void do_fight_cmd_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void do_magic_attack_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void do_multi_attack_emu(Snes *snes) { (void)snes; }
@@ -65,11 +66,15 @@ __attribute__((weak)) void init_sound_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void load_overworld_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void magic_dmg_effect_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void move_player_emu(Snes *snes) { (void)snes; }
-__attribute__((weak)) void mult16_emu(Snes *snes) { (void)snes; }
-__attribute__((weak)) void mult8_emu(Snes *snes) { (void)snes; }
+void mult16_emu(Snes *snes) { Mult16_c(snes); }         /* F1: was no-op weak stub */
+void mult8_emu(Snes *snes)  { Mult8_c(snes);  }         /* F1: was no-op weak stub */
 __attribute__((weak)) void no_self_target_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void play_map_song_emu(Snes *snes) { (void)snes; }
-__attribute__((weak)) void rand_emu(Snes *snes) { (void)snes; }
+void rand_emu(Snes *snes) {                              /* F1: Rand($03:8593) = RandXA(0,255) */
+    snes->cpu->x = 0;
+    snes->cpu->a = 0xFF;
+    RandXA_c(snes);
+}
 __attribute__((weak)) void rand_summon_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void remove_target_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void reset_sprites_emu(Snes *snes) { (void)snes; }

@@ -36,7 +36,9 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x03805f, DrawMP_c },  /* battle */
     { 0x038085, ExecBtlGfx_c },  /* battle */
     { 0x0382cb, InitHWRegs_c },  /* field */
+    { 0x038379, RandXA_c },  /* battle */
     { 0x0383b9, Mult16_c },  /* battle */
+    { 0x0383e0, Mult8_c },  /* battle */
     { 0x038407, Div16_c },  /* battle */
     { 0x0384e3, Add16_c },  /* battle */
     { 0x0384fc, Sub16_c },  /* battle */
