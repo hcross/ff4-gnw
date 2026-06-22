@@ -26,6 +26,8 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x00c0c4, PlayerSpriteTiles_c },  /* field */
     { 0x00c3bd, UpdateWhalePal_c },  /* field */
     { 0x00cb5f, TfrBGAnimGfx_c },  /* field */
+    { 0x00f533, UpdateBG2Scroll_c },  /* field — bank $00, full entry (loads $C9 guard) */
+    { 0x00f535, UpdateBG2ScrollSkip_c },  /* field — bank $00, secondary entry (caller pre-sets A) */
     { 0x00ffbc, InitCharProp_ext_c },  /* field */
     { 0x00ffe0, Vectors_c },  /* field */
     { 0x018010, UpdateCtrlField_ext_c },  /* menu */
@@ -242,6 +244,11 @@ void (*ff4_dispatch_trace)(uint32_t pc) = 0;
  * can be checked against ground truth. */
 int (*ff4_dispatch_filter)(uint32_t pc) = 0;
 
+/* Optional per-miss trace hook (desktop miss profiler). NULL on device.
+ * Called on every interpreter fall-through so a harness can tally miss PCs
+ * and produce the hot-miss list for the next porting sprint. */
+void (*ff4_dispatch_miss_trace)(uint32_t pc) = 0;
+
 #ifdef FF4_AUTOBOOT
 uint32_t g_diag_miss_ring[8] = {0};
 static uint8_t g_diag_miss_ring_head = 0;
@@ -263,6 +270,7 @@ int ff4_dispatch_try(Snes *snes, uint32_t pc) {
     }
     ff4_dispatch_misses++;
     ff4_miss_per_bank[(pc >> 16) & 0xff]++;
+    if (ff4_dispatch_miss_trace) ff4_dispatch_miss_trace(pc);
 #ifdef FF4_AUTOBOOT
     {   /* record unique miss PCs in a small ring (dedup against existing) */
         int already = 0;

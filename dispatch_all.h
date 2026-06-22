@@ -199,6 +199,7 @@ void LoadOverworldIntro_c(Snes *snes);
 void _00de1b_c(Snes *snes);
 void _00df53_c(Snes *snes);
 void UpdateBG2Scroll_c(Snes *snes);
+void UpdateBG2ScrollSkip_c(Snes *snes);
 void _00f922_c(Snes *snes);
 void TfrBG2Tilemap_c(Snes *snes);
 void DecodeBG1Tilemap_c(Snes *snes);
@@ -206,11 +207,12 @@ void UpdateLocalTiles_c(Snes *snes);
 void BoardChoco_c(Snes *snes);
 
 typedef struct { uint32_t pc; void (*fn)(Snes *snes); } ff4_dispatch_entry_t;
-#define FF4_DISPATCH_COUNT 200
+#define FF4_DISPATCH_COUNT 202
 extern const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT];
 int ff4_dispatch_try(Snes *snes, uint32_t pc);
 extern uint32_t ff4_dispatch_hits;
 extern uint32_t ff4_dispatch_misses;
 extern int ff4_dispatch_enabled;  /* 1=native dispatch (device default), 0=pure interpreter */
-extern void (*ff4_dispatch_trace)(uint32_t pc);  /* NULL on device; A/B oracle per-hit trace hook */
-extern int  (*ff4_dispatch_filter)(uint32_t pc); /* NULL on device; return 0 to force interpretation of a hook */
+extern void (*ff4_dispatch_trace)(uint32_t pc);      /* NULL on device; A/B oracle per-hit trace hook */
+extern int  (*ff4_dispatch_filter)(uint32_t pc);     /* NULL on device; return 0 to force interpretation of a hook */
+extern void (*ff4_dispatch_miss_trace)(uint32_t pc); /* NULL on device; miss profiler hook */
