@@ -34,7 +34,11 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x01dfd2, LoadBattleSpeedPosText_c },  /* menu */
     { 0x038009, ExecBattle_c },  /* battle */
     { 0x03805f, DrawMP_c },  /* battle */
-    { 0x038085, ExecBtlGfx_c },  /* battle */
+    /* 0x038085 ExecBtlGfx_c — retired: ExecBtlGfx_ext_emu was a no-op;
+     * the real ExecBtlGfx_ext dispatches through BtlGfxTbl and drives
+     * WaitVblank($1811) for NMI sync.  Without a real implementation the
+     * battle engine spins forever, draining the stack ~$2000 bytes/frame.
+     * Run in pure interpreter until ExecBtlGfx_ext is ported (F10). */
     { 0x0382cb, InitHWRegs_c },  /* field */
     { 0x038379, RandXA_c },  /* battle */
     { 0x0383b9, Mult16_c },  /* battle */
