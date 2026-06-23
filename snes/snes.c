@@ -533,15 +533,22 @@ static uint8_t snes_rread(Snes* snes, uint32_t adr) {
   return cart_read(snes->cart, bank, adr);
 }
 
+/* WRAM write watchpoint hook (desktop diagnostics only; NULL on device). */
+void (*snes_wram_write_hook)(uint32_t wram_off, uint8_t val, void *ctx) = NULL;
+void *snes_wram_write_hook_ctx = NULL;
+
 void snes_write(Snes* snes, uint32_t adr, uint8_t val) {
   snes->openBus = val;
   uint8_t bank = adr >> 16;
   adr &= 0xffff;
   if(bank == 0x7e || bank == 0x7f) {
-    snes->ram[((bank & 1) << 16) | adr] = val; // ram
+    uint32_t wram_idx = ((bank & 1) << 16) | adr;
+    if(snes_wram_write_hook) snes_wram_write_hook(wram_idx, val, snes_wram_write_hook_ctx);
+    snes->ram[wram_idx] = val; // ram
   }
   if(bank < 0x40 || (bank >= 0x80 && bank < 0xc0)) {
     if(adr < 0x2000) {
+      if(snes_wram_write_hook) snes_wram_write_hook(adr, val, snes_wram_write_hook_ctx);
       snes->ram[adr] = val; // ram mirror
     }
     if(adr >= 0x2100 && adr < 0x2200) {

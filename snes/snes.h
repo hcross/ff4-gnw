@@ -81,6 +81,10 @@ void snes_cpuWrite(void* mem, uint32_t adr, uint8_t val);
 void snes_runCpuCycle(Snes* snes);
 void snes_runSpcCycle(Snes* snes);
 
+/* WRAM write watchpoint hook (desktop diagnostics; NULL in production). */
+extern void (*snes_wram_write_hook)(uint32_t wram_off, uint8_t val, void *ctx);
+extern void *snes_wram_write_hook_ctx;
+
 // snes_other.c functions:
 
 enum { pixelFormatXRGB = 0, pixelFormatRGBX = 1 };

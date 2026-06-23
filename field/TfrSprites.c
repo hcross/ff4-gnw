@@ -23,8 +23,17 @@ void TfrSprites_c(Snes *snes) {
     uint8_t *ram = snes->ram;
 
     if (ram[0xF42B] != 0) {  // bne @fe45 — caller asked to skip the refresh
+        /* Cycle budget for the early-exit path: JMP($FE03→body) + LDA_abs(32) +
+         * BNE_taken(22) + RTL(50) − RTL_dispatch_sim(24) ≈ 104 MC.  No
+         * empirical measurement yet; use 104 as an analytic estimate. */
+        snes_runCycles(snes, 104);
         return;
     }
+
+    /* Cycle budget for the full OAM-transfer path: 5146 MC measured empirically
+     * at two independent synchronisation points (TRACE 14FD03 and 02BB1A) by
+     * comparing passe-A-dispatch vs passe-A-interp-TfrSprites runs. */
+    snes_runCycles(snes, 5146);
 
     // Reset the OAM word address, then stream the 544-byte shadow to OAMDATA.
     snes_writeBBus(snes, 0x02, 0x00);  // $2102 OAMADDL = 0

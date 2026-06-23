@@ -200,6 +200,16 @@ void _00de1b_c(Snes *snes);
 void _00df53_c(Snes *snes);
 void UpdateBG2Scroll_c(Snes *snes);
 void UpdateBG2ScrollSkip_c(Snes *snes);
+void BackAttackYOffset_s_c(Snes *snes);
+void BackAttackYOffset_l_c(Snes *snes);
+void Mult8_btlgfx_c(Snes *snes);
+void HardMult_btlgfx_c(Snes *snes);
+void IncrTextPtr_c(Snes *snes);
+void CheckSpriteVisible_c(Snes *snes);
+void UpdateMonsterAnim_c(Snes *snes);
+void DrawMonsterSprite_c(Snes *snes);
+void InitMonsterAnim_c(Snes *snes);
+void BuildOAMEntries_c(Snes *snes);
 void _00f922_c(Snes *snes);
 void TfrBG2Tilemap_c(Snes *snes);
 void DecodeBG1Tilemap_c(Snes *snes);
@@ -207,7 +217,7 @@ void UpdateLocalTiles_c(Snes *snes);
 void BoardChoco_c(Snes *snes);
 
 typedef struct { uint32_t pc; void (*fn)(Snes *snes); } ff4_dispatch_entry_t;
-#define FF4_DISPATCH_COUNT 202
+#define FF4_DISPATCH_COUNT 212
 extern const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT];
 int ff4_dispatch_try(Snes *snes, uint32_t pc);
 extern uint32_t ff4_dispatch_hits;

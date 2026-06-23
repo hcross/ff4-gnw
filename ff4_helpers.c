@@ -124,13 +124,34 @@ __attribute__((weak)) void tfr_water_gfx_emu(Snes *snes) { (void)snes; }
  * f:\$000140 mirror of the disable-multi-controller flag is an absolute
  * long store in the asm (DP-independent), so it stays at \$0140. */
 void update_ctrl_field_emu(Snes *snes) {
-    if (snes == 0 || snes->input1 == 0) return;
+    if (snes == 0) return;
 
-    uint16_t port1 = snes->portAutoRead[0];
+    /* Cycle budget: the real UpdateCtrl ($14:FD12) consumes 7022 MC more than
+     * our stub.  Measured empirically via cycle-counter watchpoints at two
+     * independent synchronisation points (PC=$02:AC0B and $02:BB3A), both
+     * showing Δ=7022 MC between the interpreter and dispatch passes. */
+    snes_runCycles(snes, 7022);
+
+    /* The real UpdateCtrl ($14:FD12) reads the auto-joypad hardware registers
+     * and stores the mapped 16-bit button word at DP_restored+$00..$03.
+     * DP_restored is the caller's direct-page value (restored by PLD inside
+     * the routine from the stack at SP+4:SP+5 at dispatch time).
+     *
+     * In oracle runs (no actual input) all writes are 0x0000, and the target
+     * range happened to already be 0 in the savestate — the DP reconstruction
+     * is a no-op for the oracle.  On device with real input, we must write to
+     * the caller's DP (not the current dp=0x0037).
+     *
+     * Reconstruct caller's D from stack: after JSL pushed PBR+PCH+PCL (3 bytes),
+     * and the caller did PHD before JSL (2 bytes), caller's D sits at SP+4:SP+5.
+     */
+    uint16_t sp = snes->cpu->sp;
+    uint16_t d = (uint16_t)(snes->ram[(uint16_t)(sp + 4)]
+                           | ((uint16_t)snes->ram[(uint16_t)(sp + 5)] << 8));
+
+    uint16_t port1 = snes->input1 ? snes->portAutoRead[0] : 0;
     uint8_t  lo = (uint8_t)(port1 & 0xFF);
     uint8_t  hi = (uint8_t)((port1 >> 8) & 0xFF);
-
-    uint16_t d = snes->cpu->dp;
     snes->ram[(uint16_t)(d + 0x00)] = lo;
     snes->ram[(uint16_t)(d + 0x01)] = hi;
     snes->ram[(uint16_t)(d + 0x02)] = lo;

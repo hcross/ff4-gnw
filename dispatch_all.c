@@ -34,6 +34,17 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x01ca85, TfrVRAM_c },  /* field */
     { 0x01d718, FadeIn_c },  /* field */
     { 0x01dfd2, LoadBattleSpeedPosText_c },  /* menu */
+    /* bank $02 — combat graphics (btlgfx) primitives */
+    { 0x028560, Mult8_btlgfx_c },         /* btlgfx — 8x8 shift-add multiply */
+    { 0x0285d2, HardMult_btlgfx_c },      /* btlgfx — hardware 8x8 multiply ($4202/$4216) */
+    { 0x02a491, IncrTextPtr_c },           /* btlgfx — increment 16-bit text ptr at $30 */
+    { 0x02bb0b, BackAttackYOffset_s_c },   /* btlgfx — Y offset adjust, back-attack (−8) */
+    { 0x02bb1a, BackAttackYOffset_l_c },   /* btlgfx — Y offset adjust, back-attack (−16) */
+    { 0x02da73, DrawMonsterSprite_c },      /* btlgfx — copy 32 sprite bytes from ROM $1C:FD00 to OAM $ED50 */
+    { 0x02dafe, InitMonsterAnim_c },       /* btlgfx — initialise/re-arm animation control for monster slot */
+    { 0x02dced, BuildOAMEntries_c },       /* btlgfx — write 2-tile OAM entries for combat object slot */
+    { 0x02dda5, CheckSpriteVisible_c },    /* btlgfx — check monster sprite visibility (C=0 visible) */
+    { 0x02dddc, UpdateMonsterAnim_c },     /* btlgfx — per-frame animation state machine for monster slot */
     { 0x038009, ExecBattle_c },  /* battle */
     { 0x03805f, DrawMP_c },  /* battle */
     /* 0x038085 ExecBtlGfx_c — retired: ExecBtlGfx_ext_emu was a no-op;
