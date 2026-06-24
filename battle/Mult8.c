@@ -9,7 +9,7 @@ void Mult8_c(Snes *snes) {
 
     // stz $e0
     // stz $e2
-    // En entrée, l'accumulateur est en 8-bit, donc stz est 8-bit.
+    // On entry the accumulator is 8-bit, so stz is byte-wide.
     ram[0xE0] = 0;
     ram[0xE2] = 0;
 
@@ -39,7 +39,7 @@ void Mult8_c(Snes *snes) {
             carry = (sum > 0xFFFF) ? 1 : 0;
             n_ones++;
         } else {
-            carry = 0; // bcc pris, carry est garanti à 0 pour @83fb
+            carry = 0; // bcc taken: carry is guaranteed 0 on entry to @83fb
             n_zeros++;
         }
 
@@ -64,12 +64,12 @@ void Mult8_c(Snes *snes) {
     int loop_cycles = n_zeros * 30 + n_ones * 45 - 1;
     snes_runCycles(snes, 32 + loop_cycles);
 
-    // Sortie: shorta0 (A 8-bit, X=0, Y inchangé, A cleared to 0 by tdc)
+    // Exit: shorta0 (A 8-bit, X=0, Y unchanged, A cleared to 0 by tdc)
     snes->cpu->x = 0;
     snes->cpu->mf = true;
     snes->cpu->a = 0;
 
-    // Les flags Z/N à la sortie reflètent le résultat du dernier `dex` (X=0)
+    // Z/N flags at exit reflect the last dex result (X=0)
     snes->cpu->z = true;
     snes->cpu->n = false;
     snes->cpu->c = carry;
