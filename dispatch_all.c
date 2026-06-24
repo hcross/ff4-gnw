@@ -78,7 +78,7 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x039f1c, TimerDur_08_c },  /* battle */
     { 0x039f75, TimerDur_0a_c },  /* battle */
     { 0x039fd8, ApplySpeedMod_c },  /* battle */
-    { 0x03b0ff, ExecCmd_c },  /* battle */
+    /* 0x03b0ff ExecCmd omitted — tail-jump via jml [$0080], not a JSR/JSL; must run in interpreter */
     { 0x03b33f, Cmd_21_c },  /* battle */
     { 0x03ba04, AITarget_1e_c },  /* battle */
     { 0x03ba67, AITarget_1f_c },  /* battle */

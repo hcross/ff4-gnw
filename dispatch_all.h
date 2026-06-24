@@ -54,7 +54,7 @@ void TimerDur_03_c(Snes *snes);
 void TimerDur_08_c(Snes *snes);
 void TimerDur_0a_c(Snes *snes);
 void ApplySpeedMod_c(Snes *snes);
-void ExecCmd_c(Snes *snes);
+/* ExecCmd_c removed from dispatch — tail-jump routine, see dispatch_all.c comment at 0x03b0ff */
 void Cmd_21_c(Snes *snes);
 void AITarget_1e_c(Snes *snes);
 void AITarget_1f_c(Snes *snes);
