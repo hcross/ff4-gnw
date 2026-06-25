@@ -48,11 +48,7 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x02dddc, UpdateMonsterAnim_c },     /* btlgfx — per-frame animation state machine for monster slot */
     { 0x038009, ExecBattle_c },  /* battle */
     { 0x03805f, DrawMP_c },  /* battle */
-    /* 0x038085 ExecBtlGfx_c — retired: ExecBtlGfx_ext_emu was a no-op;
-     * the real ExecBtlGfx_ext dispatches through BtlGfxTbl and drives
-     * WaitVblank($1811) for NMI sync.  Without a real implementation the
-     * battle engine spins forever, draining the stack ~$2000 bytes/frame.
-     * Run in pure interpreter until ExecBtlGfx_ext is ported (F10). */
+    { 0x038085, ExecBtlGfx_c },  /* battle — ExecBtlGfx_ext_emu now delegates via run_emulated_func (F10) */
     { 0x0382cb, InitHWRegs_c },  /* field */
     { 0x038379, RandXA_c },  /* battle */
     { 0x0383b9, Mult16_c },  /* battle */
@@ -72,12 +68,11 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x039741, GetPendingAction_c },  /* battle */
     { 0x039788, CheckTimer_c },  /* battle */
     { 0x0397b3, InitAction_c },  /* battle */
-    { 0x039e65, TimerDur_00_c },  /* battle */
-    { 0x039e71, TimerDur_02_c },  /* battle */
-    { 0x039e85, TimerDur_0b_c },  /* battle */
-    { 0x039e99, TimerDur_03_c },  /* battle */
-    { 0x039f1c, TimerDur_08_c },  /* battle */
-    { 0x039f75, TimerDur_0a_c },  /* battle */
+    { 0x039e65, TimerDur_00_c },  /* battle — ATB timer duration (F11) */
+    { 0x039e71, TimerDur_02_c },  /* battle — ATB timer duration (F11) */
+    { 0x039f1c, TimerDur_08_c },  /* battle — ATB timer duration (F11) */
+    { 0x039f75, TimerDur_0a_c },  /* battle — ATB timer duration (F11) */
+    /* TimerDur_0b/03 deferred: ROM access (bank $0F) not ported in C; TimerDur_07 non-standard signature */
     { 0x039fd8, ApplySpeedMod_c },  /* battle */
     /* 0x03b0ff ExecCmd omitted — tail-jump via jml [$0080], not a JSR/JSL; must run in interpreter */
     { 0x03b33f, Cmd_21_c },  /* battle */
@@ -124,11 +119,9 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x03e133, CheckWeakElem_c },  /* battle */
     { 0x03e43b, Cmd_22_c },  /* battle */
     { 0x03e4d9, TwinFailed_c },  /* battle */
-    { 0x03e699, Cmd_0f_c },  /* battle */
-    { 0x03e6b7, Cmd_0e_c },  /* battle */
-    { 0x03e839, Cmd_0c_c },  /* battle */
-    { 0x03e903, Cmd_08_c },  /* battle */
-    { 0x03eba2, Cmd_01_c },  /* battle */
+    /* Cmd_0f/0e/0c/08/01 removed: their _emu helpers (do_magic_attack_emu,
+     * do_fight_cmd_emu, do_multi_attack_emu) are no-op weak stubs — all damage
+     * was silently swallowed.  Run in pure interpreter until helpers are ported. */
     { 0x03fe03, TfrSprites_c },  /* field */
     { 0x048004, ExecSound_ext_stub },  /* sound: stub to unblock title (SPC wait); jsl target per ROM bytes at $00:860D */
     { 0x0485e1, PlayGameSfx_c },  /* sound */

@@ -7,10 +7,12 @@ void CheckTimer_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     Cpu *cpu = snes->cpu;
 
-    // lda $a9 / sta $d2
+    // lda $a9: updates cpu->a (M=8, high byte = B hidden register preserved)
+    cpu->a = (cpu->a & 0xFF00u) | (uint16_t)ram[0xA9];
+    // sta $d2
     ram[0xD2] = ram[0xA9];
 
-    // jsr SelectObj
+    // jsr SelectObj (A must hold entity index at entry — STA $352F / STA $DF)
     select_obj_emu(snes);
 
     // lda $ad / sta $d3

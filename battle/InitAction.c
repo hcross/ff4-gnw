@@ -19,14 +19,19 @@ void InitAction_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     uint8_t d2 = ram[0xD2];
     ram[0x38F6] = d2;
+    /* LDA $D2 before JSR SelectObj — SelectObj reads A as entity index. */
+    snes->cpu->a = (snes->cpu->a & 0xFF00u) | (uint16_t)d2;
     select_obj_emu(snes);              // jsr SelectObj
     ram[0x38F6]++;                     // inc $38f6
     if (ram[0x38F6] == 0x0D) {         // cmp #$0d / bne @97c8
         ram[0x38F6] = 0;               // stz $38f6
     }
     uint8_t d3 = ram[0xD3];
-    uint8_t a9 = (uint8_t)((d3 << 1) + d3); // asl / adc $d3 (8-bit truncation)
+    uint8_t a9 = (uint8_t)((d3 << 1) + d3); // asl / clc / adc $d3 (8-bit truncation)
     ram[0xA9] = a9;
+    /* ASM does LDA $A9 before JSR GetTimerPtr — must set cpu->a so GetTimerPtr
+     * computes $3598 = a9 + $3530 correctly. */
+    snes->cpu->a = (snes->cpu->a & 0xFF00u) | (uint16_t)a9;
     get_timer_ptr_emu(snes);           // jsr GetTimerPtr
     uint16_t x = read16(ram, 0x3598);
     uint8_t timer_flags = ram[0x2A06 + x];

@@ -8,7 +8,7 @@ __attribute__((weak)) void CheckNPCBlock_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void ClearBit_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void ClearNPCMap_emu(Snes *snes) { (void)snes; }
 void ExecBtlGfx_emu(Snes *snes) { run_emulated_func(snes, 0x038085u); } /* F1: was no-op weak stub */
-__attribute__((weak)) void ExecBtlGfx_ext_emu(Snes *snes) { (void)snes; }
+void ExecBtlGfx_ext_emu(Snes *snes) { run_emulated_func(snes, 0x028003u); } /* F10: was no-op weak stub */
 void ExecDMA_emu(Snes *snes) { run_emulated_func(snes, 0x008B38u); } /* F1: was no-op weak stub */
 __attribute__((weak)) void InitDMA_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void InitHWRegs_emu(Snes *snes) { (void)snes; }
@@ -37,7 +37,8 @@ __attribute__((weak)) void _13e58b_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void _13eb60_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void add_msg2_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void add_msg3_emu(Snes *snes) { (void)snes; }
-__attribute__((weak)) void apply_speed_mod_emu(Snes *snes) { (void)snes; }
+/* apply_speed_mod_emu: delegates to ApplySpeedMod_c ($03:9FD8, already dispatched). */
+void apply_speed_mod_emu(Snes *snes) { ApplySpeedMod_c(snes); }
 __attribute__((weak)) void board_whale_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void calc_dmg_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void check_battle_list_emu(Snes *snes) { (void)snes; }
@@ -87,7 +88,12 @@ __attribute__((weak)) void reset_sprites_emu(Snes *snes) { (void)snes; }
 void select_obj_emu(Snes *snes) { run_emulated_func(snes, 0x038489u); }
 __attribute__((weak)) void set_magic_status2_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void set_magic_status_emu(Snes *snes) { (void)snes; }
-__attribute__((weak)) void set_timer_dur_emu(Snes *snes) { (void)snes; }
+/* set_timer_dur_emu: SetTimerDur ($03:9FCF) — LDY $AB (16-bit), clamp negative→0, STY $D4. */
+void set_timer_dur_emu(Snes *snes) {
+    uint16_t y = read16(snes->ram, 0xAB);
+    if (y & 0x8000) y = 0;
+    write16(snes->ram, 0xD4, y);
+}
 __attribute__((weak)) void target_character_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void target_monster_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void target_monster_type_emu(Snes *snes) { (void)snes; }
