@@ -1,25 +1,31 @@
 #include "snes/snes.h"
 
-// This routine configures and triggers two DMA transfers to update the BG2 tilemap.
-// It sets the source address (from WRAM), target address, and size before calling ExecDMA.
+/* TfrBG2Tilemap ($16:FB93) — two DMA passes to VRAM.
+ * $2116/$2117 are PPU registers (bus B), $420B/$4302-$4306 are DMA registers.
+ * Must go through snes_write() — direct ram[] writes miss the hardware registers. */
 void TfrBG2Tilemap_c(Snes *snes) {
     uint8_t *ram = snes->ram;
+    uint16_t src;
 
-    // First DMA Transfer
-    uint16_t src1 = read16(ram, 0x99);         // ldx $99
-    write16(ram, 0x2116, src1);               // stx $2116
-    ram[0x420B] = 0;                           // stz $420b
-    write16(ram, 0x4302, 0x0ADB);              // ldx #$0adb / stx $4302
-    write16(ram, 0x4305, 0x0040);              // ldx #$0040 / stx $4305
-    ExecDMA_emu(snes);                        // jsr ExecDMA
+    src = read16(ram, 0x99);                    /* ldx $99 — VRAM dest addr */
+    snes_write(snes, 0x002116, (uint8_t)(src & 0xFF));
+    snes_write(snes, 0x002117, (uint8_t)((src >> 8) & 0xFF));
+    snes_write(snes, 0x00420B, 0);              /* stz $420B — disarm before re-arm */
+    snes_write(snes, 0x004302, 0xDB);           /* ldx #$0ADB — DMA ch0 src lo */
+    snes_write(snes, 0x004303, 0x0A);           /* DMA ch0 src hi */
+    snes_write(snes, 0x004305, 0x40);           /* ldx #$0040 — DMA ch0 size lo */
+    snes_write(snes, 0x004306, 0x00);           /* DMA ch0 size hi */
+    ExecDMA_emu(snes);                          /* jsr ExecDMA — sta $420B=1 → DMA go */
 
-    // Second DMA Transfer
-    uint16_t src2 = read16(ram, 0x9D);         // ldx $9d
-    write16(ram, 0x2116, src2);               // stx $2116
-    ram[0x420B] = 0;                           // stz $420b
-    write16(ram, 0x4302, 0x0B1B);              // ldx #$0b1b / stx $4302
-    write16(ram, 0x4305, 0x0040);              // ldx #$0040 / stx $4305
-    ExecDMA_emu(snes);                        // jsr ExecDMA
+    src = read16(ram, 0x9D);
+    snes_write(snes, 0x002116, (uint8_t)(src & 0xFF));
+    snes_write(snes, 0x002117, (uint8_t)((src >> 8) & 0xFF));
+    snes_write(snes, 0x00420B, 0);
+    snes_write(snes, 0x004302, 0x1B);           /* ldx #$0B1B — DMA ch0 src lo */
+    snes_write(snes, 0x004303, 0x0B);
+    snes_write(snes, 0x004305, 0x40);
+    snes_write(snes, 0x004306, 0x00);
+    ExecDMA_emu(snes);
 }
 
 // PITFALLS: 1 (DB=$7E assumed for WRAM sources $99 and $9D).

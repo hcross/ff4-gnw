@@ -99,32 +99,41 @@ void BackAttackYOffset_l_c(Snes *snes) {
  * 60           RTS
  */
 void Mult8_btlgfx_c(Snes *snes) {
-    uint8_t mult = snes->ram[0x28];
+    /* Save inputs BEFORE snes_runCycles — a VBlank NMI firing inside that call
+     * can re-enter Mult8_btlgfx_c (via PeriodicMenuUpdate→LoadMenuTfrData→Mult8)
+     * and clobber $26/$28 in WRAM.  Using stale values for the product would
+     * write the wrong DMA parameters into $1826-$182B, causing TfrMenuTilesUpdate
+     * to DMA the command-window tilemap to the wrong VRAM address (f20 artefact). */
+    uint8_t multiplicand = snes->ram[0x26];
+    uint8_t mult         = snes->ram[0x28];
     /* Cycle-accurate accounting: mirrors the 8-iteration ROR-based loop.
      * PHX(30)+LDX_imm(24)+STZ_2A(24)+STZ_2B(24) = 102 preamble
      * Per iter (bit=0, BCC taken): ROR_28(38)+BCC_t(22)+ROR_2B(38)+ROR_2A(38)+DEX(14)+BNE(22/16)
      * Per iter (bit=1, BCC not taken): ROR_28(38)+BCC_nt(16)+LDA(24)+CLC(14)+ADC(24)+STA(24)+ROR_2B(38)+ROR_2A(38)+DEX(14)+BNE(22/16)
      * PLX(36)+RTS(42) = 78 epilog.  Subtract 16 MC already consumed by dispatch pullWord. */
     int cyc = 102 + 78;
+    uint8_t tmp = mult;
     for (int i = 0; i < 8; i++) {
         cyc += 38; /* ROR $28 */
-        if (mult & 1) {
+        if (tmp & 1) {
             cyc += 16 + 24 + 14 + 24 + 24; /* BCC_nt + LDA + CLC + ADC + STA */
         } else {
             cyc += 22; /* BCC taken */
         }
         cyc += 38 + 38 + 14; /* ROR $2B + ROR $2A + DEX */
         cyc += (i < 7) ? 22 : 16; /* BNE taken / not taken on last iter */
-        mult >>= 1;
+        tmp >>= 1;
     }
     snes_runCycles(snes, cyc - 16);
 
-    uint16_t product = (uint16_t)snes->ram[0x26] * (uint16_t)snes->ram[0x28];
+    /* Use saved inputs — $26/$28 in WRAM may have been clobbered by an NMI above. */
+    uint16_t product = (uint16_t)multiplicand * (uint16_t)mult;
     snes->ram[0x2A] = (uint8_t)(product & 0xFF);
     snes->ram[0x2B] = (uint8_t)(product >> 8);
-    /* Simulate 8 ROR on $28 (with carry propagation) to match the 65816 loop side-effect. */
+    /* Simulate 8 ROR on $28 (with carry propagation) to match the 65816 loop side-effect.
+     * Use saved mult — $28 in WRAM may carry the inner NMI call's rotated value. */
     {
-        uint8_t b = snes->ram[0x28];
+        uint8_t b = mult;
         uint8_t c = snes->cpu->c;
         for (int i = 0; i < 8; i++) {
             uint8_t nc = b & 1;
@@ -163,10 +172,13 @@ void Mult8_btlgfx_c(Snes *snes) {
  * The hardware multiply is instantaneous in emulation; no cycle accounting needed.
  */
 void HardMult_btlgfx_c(Snes *snes) {
+    /* Save inputs before snes_runCycles — same NMI-clobber hazard as Mult8_btlgfx_c. */
+    uint8_t mc = snes->ram[0x1C];
+    uint8_t mp = snes->ram[0x1E];
     /* PHX(30)+LDA(24)+STA_4202(38)+LDA(24)+STA_4203(38)+PHB(22)+TDC(14)+PHA(22)
      * +PLB(28)+LDX_4216(36)+STX_20(32)+PLB(28)+PLX(36)+RTS(42)=414, -16 pull = 398 */
     snes_runCycles(snes, 398);
-    uint16_t product = (uint16_t)snes->ram[0x1C] * (uint16_t)snes->ram[0x1E];
+    uint16_t product = (uint16_t)mc * (uint16_t)mp;
     snes->ram[0x20] = (uint8_t)(product & 0xFF);
     snes->ram[0x21] = (uint8_t)(product >> 8);
     snes->cpu->a = snes->cpu->dp;                       /* TDC: dp=0 → A=0 */

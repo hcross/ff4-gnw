@@ -7,9 +7,9 @@ __attribute__((weak)) void run_emulated_func(Snes *snes, uint32_t addr) { (void)
 __attribute__((weak)) void CheckNPCBlock_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void ClearBit_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void ClearNPCMap_emu(Snes *snes) { (void)snes; }
-__attribute__((weak)) void ExecBtlGfx_emu(Snes *snes) { (void)snes; }
+void ExecBtlGfx_emu(Snes *snes) { run_emulated_func(snes, 0x038085u); } /* F1: was no-op weak stub */
 __attribute__((weak)) void ExecBtlGfx_ext_emu(Snes *snes) { (void)snes; }
-__attribute__((weak)) void ExecDMA_emu(Snes *snes) { (void)snes; }
+void ExecDMA_emu(Snes *snes) { run_emulated_func(snes, 0x008B38u); } /* F1: was no-op weak stub */
 __attribute__((weak)) void InitDMA_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void InitHWRegs_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void InitInterrupts_emu(Snes *snes) { (void)snes; }
@@ -43,7 +43,8 @@ __attribute__((weak)) void calc_dmg_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void check_battle_list_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void check_player_move_world_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void check_strong_elem_emu(Snes *snes) { (void)snes; }
-__attribute__((weak)) void check_timer_emu(Snes *snes) { (void)snes; }
+/* check_timer_emu: delegates to CheckTimer_c ($03:9788, already dispatched). */
+void check_timer_emu(Snes *snes) { CheckTimer_c(snes); }
 __attribute__((weak)) void check_weak_elem_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void clear_text_emu(Snes *snes) { (void)snes; }
 void div16_emu(Snes *snes) { Div16_c(snes); }           /* F1: was no-op weak stub */
@@ -57,7 +58,9 @@ __attribute__((weak)) void fade_out_song_slow_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void get_monster_with_status_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void get_next_event_byte_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void get_tile_prop_emu(Snes *snes) { (void)snes; }
-__attribute__((weak)) void get_timer_ptr_emu(Snes *snes) { (void)snes; }
+/* get_timer_ptr_emu: executes GetTimerPtr ($03:8569) in the interpreter.
+ * Computes $3598:$3599 = $3530:$3531 + A (timer-array base + offset). */
+void get_timer_ptr_emu(Snes *snes) { run_emulated_func(snes, 0x038569u); }
 __attribute__((weak)) void give_item_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void init_battle_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void init_char_prop_emu(Snes *snes) { (void)snes; }
@@ -78,7 +81,10 @@ void rand_emu(Snes *snes) {                              /* F1: Rand($03:8593) =
 __attribute__((weak)) void rand_summon_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void remove_target_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void reset_sprites_emu(Snes *snes) { (void)snes; }
-__attribute__((weak)) void select_obj_emu(Snes *snes) { (void)snes; }
+/* select_obj_emu: executes SelectObj ($03:8489) in the interpreter.
+ * Computes $A6 (char/monster property ptr) and $3530:$3531 (timer-array ptr)
+ * from entity index in A; calls Mult8_c ($03:83E0) internally. */
+void select_obj_emu(Snes *snes) { run_emulated_func(snes, 0x038489u); }
 __attribute__((weak)) void set_magic_status2_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void set_magic_status_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void set_timer_dur_emu(Snes *snes) { (void)snes; }

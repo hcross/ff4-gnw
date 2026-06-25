@@ -37,6 +37,7 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     /* bank $02 — combat graphics (btlgfx) primitives */
     { 0x028560, Mult8_btlgfx_c },         /* btlgfx — 8x8 shift-add multiply */
     { 0x0285d2, HardMult_btlgfx_c },      /* btlgfx — hardware 8x8 multiply ($4202/$4216) */
+    { 0x0290a0, TfrBG2MenuTile_c },          /* btlgfx — BG2 menu tile DMA (atomic Mult8+read, race fix) */
     { 0x02a491, IncrTextPtr_c },           /* btlgfx — increment 16-bit text ptr at $30 */
     { 0x02bb0b, BackAttackYOffset_s_c },   /* btlgfx — Y offset adjust, back-attack (−8) */
     { 0x02bb1a, BackAttackYOffset_l_c },   /* btlgfx — Y offset adjust, back-attack (−16) */
