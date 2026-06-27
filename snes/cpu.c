@@ -14,6 +14,11 @@
  * vetted C body for, run the C body instead of interpreting the asm.
  * Defined in dispatch_battle.c (auto-generated). */
 extern int ff4_dispatch_try(Snes *snes, uint32_t pc);
+/* Oracle cycle-cost calibration (ADR 0001 / oracle hardening): on every RTS/RTL
+ * the interpreter notifies the measure module so it can close any dispatch-entry
+ * frame whose routine just returned. No-op unless ff4_dispatch_measure is set
+ * (oracle only); device leaves it 0, so this is one never-taken branch. */
+extern void ff4_dispatch_measure_return(Snes *snes);
 #endif
 
 static uint8_t cpu_read(Cpu* cpu, uint32_t adr);
@@ -1473,6 +1478,9 @@ static void cpu_doOpcode(Cpu* cpu, uint8_t opcode) {
       cpu->pc = cpu_pullWord(cpu, false) + 1;
       cpu_checkInt(cpu);
       cpu_idle(cpu);
+#ifdef FF4_PORT_STATIC_SNES
+      ff4_dispatch_measure_return((Snes *)cpu->mem);
+#endif
       break;
     }
     case 0x61: { // adc idx
@@ -1553,6 +1561,9 @@ static void cpu_doOpcode(Cpu* cpu, uint8_t opcode) {
       cpu->pc = cpu_pullWord(cpu, false) + 1;
       cpu_checkInt(cpu);
       cpu->k = cpu_pullByte(cpu);
+#ifdef FF4_PORT_STATIC_SNES
+      ff4_dispatch_measure_return((Snes *)cpu->mem);
+#endif
       break;
     }
     case 0x6c: { // jmp ind

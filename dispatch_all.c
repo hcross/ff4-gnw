@@ -254,12 +254,91 @@ int (*ff4_dispatch_filter)(uint32_t pc) = 0;
  * and produce the hot-miss list for the next porting sprint. */
 void (*ff4_dispatch_miss_trace)(uint32_t pc) = 0;
 
+/* Cycle-accounting for the desktop A/B oracle (ADR 0001 / oracle hardening).
+ *
+ * A dispatched C body runs in ~0 SNES cycles (only the JSR/JSL prologue + the
+ * simulated RTS/RTL are charged), whereas the original asm routine it replaces
+ * consumed real cycles. Left uncharged, the native pass races ahead of the
+ * interpreter pass and the two drift in PPU phase — the "structural
+ * execution-speed artefact" that produces false-positive CRC/WRAM divergences.
+ *
+ * When ff4_dispatch_charge_cycles is set (oracle only — 0 on device, so device
+ * timing is unchanged), ff4_dispatch_try charges the difference between the
+ * routine's measured interpreter cost (ff4_dispatch_cycle_cost[i], populated by
+ * the calibration pass) and the cycles the C body actually consumed this call.
+ * That single rule self-corrects all three body shapes:
+ *   - pure C body (0 real cycles)             -> charge the full measured cost
+ *   - self-accounting body (snes_runCycles)   -> ~0 left to charge
+ *   - delegating body (run_emulated_func)     -> charge only the remainder
+ * Indexed by dispatch-table slot (tracks ff4_dispatch_table order). */
+int ff4_dispatch_charge_cycles = 0;
+int32_t ff4_dispatch_cycle_cost[FF4_DISPATCH_COUNT] = {0};
+const int ff4_dispatch_count = FF4_DISPATCH_COUNT;  /* table size, for the oracle */
+
+/* Calibration of ff4_dispatch_cycle_cost[] (oracle only; 0 on device).
+ *
+ * Run with ff4_dispatch_measure set and dispatch DISABLED (pure interpreter):
+ * ff4_dispatch_measure_enter pushes a frame when a JSR/JSL targets a dispatch
+ * entry, recording the in-routine entry SP and cycle count; the interpreter then
+ * runs the real asm routine. On each RTS/RTL, ff4_dispatch_measure_return closes
+ * every frame whose routine has returned (SP risen back above its entry level)
+ * and records the routine's cycle cost (max over occurrences — the worst case is
+ * the safe charge). Stack grows down, so the most recent (deepest) frame has the
+ * smallest SP and returns first. */
+int ff4_dispatch_measure = 0;
+static struct { int slot; uint64_t cyc; uint16_t sp; uint32_t frame; } ff4_meas_stack[64];
+static int ff4_meas_top = 0;
+
+static void ff4_dispatch_measure_enter(Snes *snes, uint32_t pc) {
+    for (int i = 0; i < FF4_DISPATCH_COUNT; i++) {
+        if (ff4_dispatch_table[i].pc == pc) {
+            if (ff4_meas_top < 64) {
+                ff4_meas_stack[ff4_meas_top].slot  = i;
+                ff4_meas_stack[ff4_meas_top].cyc   = snes->cycles;
+                ff4_meas_stack[ff4_meas_top].sp    = snes->cpu->sp;
+                ff4_meas_stack[ff4_meas_top].frame = snes->frames;
+                ff4_meas_top++;
+            }
+            return;
+        }
+    }
+}
+
+void ff4_dispatch_measure_return(Snes *snes) {
+    if (!ff4_dispatch_measure) return;
+    /* A frame's routine has returned once SP has risen strictly above the SP it
+     * had just inside the routine (the original JSR/JSL return frame popped). */
+    while (ff4_meas_top > 0 && snes->cpu->sp > ff4_meas_stack[ff4_meas_top - 1].sp) {
+        int slot = ff4_meas_stack[ff4_meas_top - 1].slot;
+        /* Only record routines that completed WITHIN a single frame. A routine
+         * that crossed a vblank (WaitVblank-driven, NMI re-entry, or a missed
+         * RTS/RTL via a JML tail-jump that the SP watermark closes much later)
+         * has a variable, unbounded "cost" that must NOT be charged as a fixed
+         * value — doing so injects cycle drift. Such routines self-regulate
+         * through the interpreter anyway (their sub-calls charge real cycles). */
+        if (snes->frames == ff4_meas_stack[ff4_meas_top - 1].frame) {
+            int32_t cost = (int32_t)(snes->cycles - ff4_meas_stack[ff4_meas_top - 1].cyc);
+            if (cost > ff4_dispatch_cycle_cost[slot]) ff4_dispatch_cycle_cost[slot] = cost;
+        }
+        ff4_meas_top--;
+    }
+}
+
+/* Reset calibration state between oracle passes. */
+void ff4_dispatch_measure_reset(void) {
+    ff4_meas_top = 0;
+    for (int i = 0; i < FF4_DISPATCH_COUNT; i++) ff4_dispatch_cycle_cost[i] = 0;
+}
+
 #ifdef FF4_AUTOBOOT
 uint32_t g_diag_miss_ring[8] = {0};
 static uint8_t g_diag_miss_ring_head = 0;
 #endif
 
 int ff4_dispatch_try(Snes *snes, uint32_t pc) {
+    /* Calibration runs with dispatch disabled, so measure BEFORE the early-out:
+     * the real asm routine is about to run in the interpreter and we time it. */
+    if (ff4_dispatch_measure) ff4_dispatch_measure_enter(snes, pc);
     if (!ff4_dispatch_enabled) return 0;  /* pure-interpreter side of the A/B */
     /* Linear scan (binary search was unreliable: gen_dispatch.py sorts by the
      * original pc, then rewrites banks, leaving the table unsorted). */
@@ -269,7 +348,18 @@ int ff4_dispatch_try(Snes *snes, uint32_t pc) {
                 return 0;  /* excluded: fall through to pure interpretation */
             ff4_dispatch_hits++;
             if (ff4_dispatch_trace) ff4_dispatch_trace(pc);
-            ff4_dispatch_table[i].fn(snes);
+            if (ff4_dispatch_charge_cycles) {
+                uint64_t cyc_before = snes->cycles;
+                ff4_dispatch_table[i].fn(snes);
+                int32_t cost = ff4_dispatch_cycle_cost[i];
+                if (cost > 0) {
+                    int64_t body = (int64_t)(snes->cycles - cyc_before);
+                    int64_t charge = (int64_t)cost - body;
+                    if (charge > 0) snes_runCycles(snes, (int)charge);
+                }
+            } else {
+                ff4_dispatch_table[i].fn(snes);
+            }
             return 1;
         }
     }
