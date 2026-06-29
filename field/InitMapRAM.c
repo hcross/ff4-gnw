@@ -7,14 +7,15 @@ void InitMapRAM_c(Snes *snes) {
     uint8_t *ram = snes->ram;
     Cpu *cpu = snes->cpu;
 
-    // lda #$80 / sta hINIDISP (Assuming hINIDISP is a hardware register/RAM offset)
-    // In the context of the field module, these offsets are often in the 0x00-0xFF range (DP=0)
-    ram[0x00] = 0x80; // hINIDISP (Placeholder: specific offset depends on include/macros.inc)
-    
-    // stz hHDMAEN / stz hNMITIMEN
-    ram[0x01] = 0;    // hHDMAEN (Placeholder)
-    ram[0x02] = 0;    // hNMITIMEN (Placeholder)
-    
+    // lda #$80 / sta hINIDISP ; stz hHDMAEN ; stz hNMITIMEN — these are MMIO
+    // registers, NOT WRAM. The original port hallucinated WRAM offsets
+    // $00/$01/$02 (comments literally said "Placeholder"), which left HDMA/NMI
+    // unconfigured (→ corrupted Mode-7 graphics + broken scroll) and clobbered
+    // zero-page scratch. Route them through the bus, like InitHWRegs_c does.
+    snes_write(snes, 0x2100, 0x80); // hINIDISP  — force blank
+    snes_write(snes, 0x420C, 0x00); // hHDMAEN   — disable HDMA channels
+    snes_write(snes, 0x4200, 0x00); // hNMITIMEN — disable NMI/IRQ/auto-joypad
+
     cpu->i = true;    // sei (disable interrupts)
 
     reset_sprites_emu(snes); // jsr ResetSprites
