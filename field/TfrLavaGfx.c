@@ -8,41 +8,27 @@
 void TfrLavaGfx_c(Snes *snes) {
     uint8_t *ram = snes->ram;
 
-    // First Pass
-    // lda #$80 / sta $2115
-    snes->ram[0x2115] = 0x80; 
-    
-    // lda $7c / lsr / and #$0f / tax
+    // $2115/$2116/$2117 are MMIO PPU regs (not WRAM) → bus. And WaterShiftX is a
+    // ROM table at $8F:90AA (DB=$8F), not WRAM — the original port read
+    // ram[$8F00+x] ($7E:8F00). The actual transfer is done by TfrWaterTiles
+    // (delegated to the interpreter), so no manual loop here — only the register
+    // setup needs fixing.
+    snes_writeBBus(snes, 0x15, 0x80);   // $2115 VMAIN
+
     uint8_t shift_idx = (uint8_t)((ram[0x7C] >> 1) & 0x0F);
-    
-    // lda WaterShiftX,x / tax / sta $2116
-    // WaterShiftX is located at 0x0000 in the current data bank (0x8F)
-    // Since we access ram directly, we use the bank-relative offset
-    uint8_t shift_val = ram[0x8F00 + shift_idx]; // Note: WaterShiftX is at $8F:0000
-    snes->ram[0x2116] = shift_val;
-    
-    // lda #$38 / sta $2117
-    snes->ram[0x2117] = 0x38;
-    
-    // jsr TfrWaterTiles
-    TfrWaterTiles_emu(snes);
+    uint8_t shift_val = snes_read(snes, 0x8F90AA + shift_idx); // WaterShiftX,x (ROM)
+    snes_writeBBus(snes, 0x16, shift_val);  // $2116 VMADDL
+    snes_writeBBus(snes, 0x17, 0x38);       // $2117 VMADDH
+    TfrWaterTiles_emu(snes);                // jsr TfrWaterTiles (does the copy)
 
-    // Second Pass
-    // lda $7c / lsr / and #$0f / tax
+    // Second pass: same index, +$40 offset
     shift_idx = (uint8_t)((ram[0x7C] >> 1) & 0x0F);
-    
-    // lda WaterShiftX,x / clc / adc #$40 / tax / sta $2116
-    uint8_t offset_val = (uint8_t)(ram[0x8F00 + shift_idx] + 0x40); // Pitfall 7
-    snes->ram[0x2116] = offset_val;
-    
-    // lda #$38 / sta $2117
-    snes->ram[0x2117] = 0x38;
-    
-    // jsr TfrWaterTiles
+    uint8_t offset_val = (uint8_t)(snes_read(snes, 0x8F90AA + shift_idx) + 0x40);
+    snes_writeBBus(snes, 0x16, offset_val); // $2116 VMADDL
+    snes_writeBBus(snes, 0x17, 0x38);       // $2117 VMADDH
     TfrWaterTiles_emu(snes);
 
-    // inc $7c
-    ram[0x7C]++;
+    ram[0x7C]++;                            // inc $7c (animation frame)
 }
 
 // PITFALLS: 7 (8-bit truncation for addition)

@@ -10,7 +10,10 @@ __attribute__((weak)) void ClearNPCMap_emu(Snes *snes) { (void)snes; }
 void ExecBtlGfx_emu(Snes *snes) { run_emulated_func(snes, 0x038085u); } /* F1: was no-op weak stub */
 void ExecBtlGfx_ext_emu(Snes *snes) { run_emulated_func(snes, 0x028003u); } /* F10: was no-op weak stub */
 void ExecDMA_emu(Snes *snes) { run_emulated_func(snes, 0x008B38u); } /* F1: was no-op weak stub */
-__attribute__((weak)) void InitDMA_emu(Snes *snes) { (void)snes; }
+/* InitDMA_emu: delegates to InitDMA_c (sets DMA0 BBAD=$18 etc. via the bus).
+ * Was a no-op weak stub → callers (e.g. CloseYesNoWindow) got an unprogrammed
+ * DMA B-bus address. */
+void InitDMA_emu(Snes *snes) { InitDMA_c(snes); }
 __attribute__((weak)) void InitHWRegs_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void InitInterrupts_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void LoadMap_emu(Snes *snes) { (void)snes; }

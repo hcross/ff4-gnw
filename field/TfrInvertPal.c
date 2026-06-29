@@ -6,22 +6,15 @@
 void TfrInvertPal_c(Snes *snes) {
     uint8_t *ram = snes->ram;
 
-    // Initialize DMA control and flags
-    ram[0x420B] = 0;    // stz $420b
-    ram[0x2121] = 0;    // stz $2121
-
-    // DMA Source Address: $BDB0
-    ram[0x4300] = 0x02; // sta $4300 (Address low byte)
-    ram[0x4301] = 0x22; // sta $4301 (Address mid byte)
-    // Note: $4302 is written via X (16-bit)
-    write16(ram, 0x4302, 0xBDB); // ldx #$0bdb / stx $4302 (Address high/offset)
-
-    // DMA Destination Address: $0100 (CGRAM/Palette)
-    ram[0x4304] = 0x00; // sta $4304
-    write16(ram, 0x4305, 0x0100); // ldx #$0100 / stx $4305
-
-    // Trigger DMA transfer
-    ram[0x420B] = 0x01; // sta $420b
+    (void)ram;
+    // CGRAM (palette) DMA: 256 bytes from $00:0BDB → CGDATA, CGADD=0. The
+    // original port wrote the DMA params to WRAM ($7E:43xx) and never
+    // transferred. Replicate manually via $2122 (CGDATA) — DMA-from-C doesn't
+    // flush on the isolated harness (F6); $2122 writes take effect immediately.
+    snes_writeBBus(snes, 0x21, 0x00);   // $2121 CGADD = 0
+    uint32_t src = 0x000BDB;            // source ($4304=0 bank, $4302=$0BDB)
+    for (int i = 0; i < 0x100; i++)     // size $4305 = 0x0100 bytes (128 colours)
+        snes_writeBBus(snes, 0x22, snes_read(snes, src++));  // $2122 CGDATA
 }
 
 // PITFALLS: 1 (DB=$EE required for these memory accesses)

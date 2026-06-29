@@ -28,32 +28,21 @@ void TfrBGAnimGfx_c(Snes *snes) {
     addr_val += 0x5000;
     write16(ram, 0x12, addr_val);
 
-    // shorta: Switch back to 8-bit A
-    // Hardware register initialization
-    ram[0x2115] = 0x80;
-    ram[0x420B] = 0;
-    ram[0x4300] = 0x01;
-    ram[0x4301] = 0x18;
-    
-    // Note: Using write16 for 16-bit X registers
-    write16(ram, 0x2116, 0x1200); 
-    ram[0x4304] = 0x7F;
-    write16(ram, 0x2116, 0x1200);
+    // Manual VRAM transfer (DMA-from-C doesn't flush on the isolated harness —
+    // F6; the original port wrote the DMA params to WRAM $7E:43xx and never
+    // transferred → animated BG tiles missing/garbled). 4 bursts of 128 B from
+    // $7F:($12 word) — each advancing the source by $0200 — to VRAM $1200 via
+    // $2118/$2119 (DMAP=1 word writes, VMAIN=$80). Source bank $4304=$7F.
+    snes_writeBBus(snes, 0x15, 0x80);          // $2115 VMAIN = $80
+    snes_writeBBus(snes, 0x16, 0x00);          // $2116 VMADDL = $1200
+    snes_writeBBus(snes, 0x17, 0x12);
 
     uint8_t y = 4;
     do {
-        // ldx $12 / stx $4302
-        // Since X is 16-bit (xf=0), this loads the word from $12
-        write16(ram, 0x4302, read16(ram, 0x12));
-        
-        // ldx #$0080 / stx $4305
-        write16(ram, 0x4305, 0x0080);
-        
-        ram[0x420B] = 0x01;
-        
-        // lda $13 / clc / adc #$02 / sta $13
-        ram[0x13] = (uint8_t)(ram[0x13] + 2);
-        
+        uint32_t src = ((uint32_t)0x7F << 16) | read16(ram, 0x12); // $4304 bank, $4302 addr
+        for (int i = 0; i < 0x80; i++)         // size $4305 = 0x0080 bytes
+            snes_writeBBus(snes, (uint8_t)(0x18 + (i & 1)), snes_read(snes, src++));
+        ram[0x13] = (uint8_t)(ram[0x13] + 2);  // $13 += 2 → source += $0200
         y--;
     } while (y != 0);
 }

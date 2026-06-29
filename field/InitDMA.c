@@ -4,16 +4,12 @@
 // It clears the MDMA enable flag, sets the DMA control register,
 // and clears the DMA address register.
 void InitDMA_c(Snes *snes) {
-    // Note: $4300 range is SNES hardware register space (CGRAM/DMA/etc).
-    // In the snesrev/LakeSnes pattern, these are accessed via the 
-    // snes->ram mapping or specific hardware register offsets.
-    // According to standard SNES mapping:
-    // hMDMAEN corresponds to $4300
-    uint8_t *ram = snes->ram;
-
-    ram[0x4300] = 0; // stz hMDMAEN
-    ram[0x4301] = 0x18; // lda #$18 / sta $4301
-    ram[0x4304] = 0; // stz $4304
+    // MMIO registers (DB=$00), not WRAM. Two bugs in the original port: it wrote
+    // ram[$43xx] (WRAM $7E:43xx) AND mis-mapped hMDMAEN to $4300 (it is $420B).
+    // No transfer here — just DMA register init. Route through the bus.
+    snes_write(snes, 0x420B, 0x00); // stz hMDMAEN — disable DMA
+    snes_write(snes, 0x4301, 0x18); // sta $4301  — DMA0 B-bus addr ($2118)
+    snes_write(snes, 0x4304, 0x00); // stz $4304  — DMA0 source bank
 }
 
 // PITFALLS: None. Simple register writes.

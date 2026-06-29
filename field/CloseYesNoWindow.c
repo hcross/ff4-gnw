@@ -9,30 +9,28 @@
 void CloseYesNoWindow_c(Snes *snes) {
     uint8_t *ram = snes->ram;
 
-    // A is 8-bit (mf=1), X is 16-bit (xf=0) per field module convention
-    ram[0x2115] = 0x80;
+    // $2115/$2116 and $43xx are MMIO (not WRAM) → bus. The DMA *trigger* is
+    // delegated to ExecDMA (interpreter, where cycles flow), so once the channel
+    // is programmed through the bus the transfer runs — no manual loop. The
+    // original port wrote everything to WRAM and left the source as "Placeholder"
+    // $0000 → nothing transferred (yes/no window never hidden).
+    snes_writeBBus(snes, 0x15, 0x80);   // $2115 VMAIN
 
-    InitDMA_emu(snes);
+    InitDMA_emu(snes);                  // DMA0 BBAD=$18 ($2118 VMDATA) etc.
 
-    ram[0x4300] = 0x01;
+    snes_write(snes, 0x4300, 0x01);     // DMA0 DMAP — word writes ($2118/$2119)
 
-    // ldx $3d / stx $2116
-    // X is 16-bit; reads word from $3D and writes word to $2116
-    uint16_t vram_addr = read16(ram, 0x3D);
-    write16(ram, 0x2116, vram_addr);
+    uint16_t vram_addr = read16(ram, 0x3D);   // ldx $3d / stx $2116 (VRAM dest)
+    snes_writeBBus(snes, 0x16, (uint8_t)(vram_addr & 0xFF));
+    snes_writeBBus(snes, 0x17, (uint8_t)(vram_addr >> 8));
 
-    // ldx #.loword(YesNoTilesHide) / stx $4302
-    // YesNoTilesHide is a ROM constant. These values are handled by 
-    // the emulator's ROM mapping or static constants.
-    write16(ram, 0x4302, 0x0000); // Placeholder for .loword(YesNoTilesHide)
+    snes_write(snes, 0x4302, 0xC6);     // A1T = loword(YesNoTilesHide) = $F6C6
+    snes_write(snes, 0x4303, 0xF6);
+    snes_write(snes, 0x4304, 0x15);     // A1B = bankbyte(YesNoTilesHide) = $15
+    snes_write(snes, 0x4305, 0x10);     // DAS size = $0010
+    snes_write(snes, 0x4306, 0x00);
 
-    // lda #.bankbyte(YesNoTilesHide) / sta $4304
-    ram[0x4304] = 0x00; // Placeholder for .bankbyte(YesNoTilesHide)
-
-    // ldx #$0010 / stx $4305
-    write16(ram, 0x4305, 0x0010);
-
-    ExecDMA_emu(snes);
+    ExecDMA_emu(snes);                  // triggers channel 0 in the interpreter
 }
 
 // PITFALLS: 6 (Mode A 8-bit vs 16-bit), 8 (Inherited mf=true, xf=false)
