@@ -19,10 +19,10 @@ void IncBrightness_c(Snes *snes) {
 
     // @dbcc: lda $80 / sta $2100
     // Note: $2100 is outside WRAM, but based on snesrev/zelda3 pattern,
-    // we write to the mapped hardware/IO space in snes->ram if provided 
-    // or a specific IO register. In this context, we treat the destination 
-    // as an absolute write.
-    snes->ram[0x2100] = ram[0x80];
+    // INIDISP ($2100) is an MMIO register (DB=$00), NOT WRAM. The original port
+    // wrote snes->ram[0x2100] ($7E:2100), so brightness never reached the PPU →
+    // fades never took effect. Route it through the bus.
+    snes_write(snes, 0x2100, ram[0x80]);
 }
 
 // PITFALLS: 7 (8-bit truncation for INC, though not overflowing 0x0F here)

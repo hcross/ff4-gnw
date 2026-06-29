@@ -26,11 +26,12 @@ void ExecBattle_c(Snes *snes) {
     // Call InitBattle
     init_battle_emu(snes);
 
-    // Write hardware registers (all zero)
-    ram[0x4200] = 0;  // hNMITIMEN
-    ram[0x420B] = 0;  // hMDMAEN
-    ram[0x420C] = 0;  // hHDMAEN
-    ram[0x2100] = 0;  // hINIDISP
+    // Write hardware registers (all zero) — MMIO (DB=$00), not WRAM. Original
+    // port wrote $7E:xxxx (no effect: NMI/HDMA/forced-blank never set). Bus.
+    snes_write(snes, 0x4200, 0);  // hNMITIMEN — disable NMI/IRQ
+    snes_write(snes, 0x420B, 0);  // hMDMAEN  — disable MDMA
+    snes_write(snes, 0x420C, 0);  // hHDMAEN  — disable HDMA
+    snes_write(snes, 0x2100, 0);  // hINIDISP — (brightness 0; not forced blank)
 
     // Restore registers and processor status
     cpu->a = saved_a;

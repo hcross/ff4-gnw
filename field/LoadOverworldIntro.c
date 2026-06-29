@@ -18,8 +18,9 @@ void LoadOverworldIntro_c(Snes *snes) {
     update_zoom_pal_emu(snes);  // jsl UpdateZoomPal
     
     ram[0xAC] = 0x02;            // lda #$02 / sta $ac (movement speed)
-    ram[0x4200] = 0x81;          // lda #$81 / sta $4200 (enable nmi)
-    ram[0x2100] = 0;             // stz $2100 (screen on, zero brightness)
+    // $4200/$2100 are MMIO (DB=$00), not WRAM — route through the bus.
+    snes_write(snes, 0x4200, 0x81); // enable NMI
+    snes_write(snes, 0x2100, 0x00); // screen on, zero brightness
     ram[0x80] = 0;              // stz $80
     ram[0x7B] = 0;              // stz $7b
     ram[0x7A] = 0;              // stz $7a

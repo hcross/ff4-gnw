@@ -20,13 +20,13 @@ void InitWorld_c(Snes *snes) {
 
     ram[0x85] = 0;                 // stz $85 (disable battle)
     
-    // Hardware Register Access (Standard SNES mapping via ram mapping or IO)
-    // Note: In this specific reimplementation, hardware regs are accessed via ram offsets
-    // provided by the harness or the mapping logic of the original project.
-    ram[0x2105] = 7;               // sta hBGMODE (assuming hBGMODE maps to $2105)
-    ram[0x212C] = 0x11;            // sta $212c (enable sprites and bg1)
-    ram[0x2130] = 0;               // stz $2130
-    ram[0x2131] = 0;               // stz $2131
+    // PPU registers ($21xx) are MMIO (DB=$00), not WRAM. The original port
+    // wrote $7E:21xx (no effect: BG mode / screen-enable / color-math never
+    // set → wrong video mode on the overworld). Route through the bus.
+    snes_write(snes, 0x2105, 0x07);   // hBGMODE — mode 7
+    snes_write(snes, 0x212C, 0x11);   // TM — enable sprites + BG1
+    snes_write(snes, 0x2130, 0x00);   // CGWSEL
+    snes_write(snes, 0x2131, 0x00);   // CGADSUB
 
     if (ram[0xB1] == 0) {          // lda $b1 / bne @85d2
         play_map_song_emu(snes);   // jsr PlayMapSong

@@ -13,11 +13,10 @@ void AfterCutscene_c(Snes *snes) {
     // cli
     snes->cpu->i = false;
     
-    // lda #$00 / sta $2100 (Screen on, zero brightness)
-    snes->ram[0x2100] = 0x00;
-    
-    // lda #$81 / sta $4200 (Enable NMI)
-    snes->ram[0x4200] = 0x81;
+    // $2100 (INIDISP) and $4200 (NMITIMEN) are MMIO (DB=$00), not WRAM —
+    // route through the bus (original port wrote $7E:xxxx, no hardware effect).
+    snes_write(snes, 0x2100, 0x00); // screen on, zero brightness
+    snes_write(snes, 0x4200, 0x81); // enable NMI + auto-joypad
 }
 
 // PITFALLS: None
