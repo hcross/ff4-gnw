@@ -16,34 +16,33 @@ void TfrBGGfx_c(Snes *snes) {
     // → BG tiles never reached VRAM → garbled tilemap. The DMA *source* ($4302-4,
     // A1T) is set by the caller and intentionally left intact here.
 
-    snes_write(snes, 0x4301, 0x18);  // sta $4301  — DMA0 B-bus addr ($2118 VMDATA)
-    snes_write(snes, 0x2116, 0x00);  // stx hVMADDL — VRAM address = $0000
-    snes_write(snes, 0x2117, 0x00);
+    // Manual VRAM transfer — same approach as TfrSprites_c (F6). A DMA triggered
+    // from dispatched C does NOT flush on the isolated harness (dma_startDma only
+    // sets dmaState; the transfer needs CPU cycles), so replicate the two-burst
+    // DMA with direct $2118/$2119 (VMDATA) writes, which take effect immediately.
+    // The source gfx is pre-loaded into DMA channel 0's A-bus address by the
+    // caller (ROM, bank $B1); the original port wrote the DMA params into WRAM
+    // ($7E:43xx) and never transferred anything → garbled tilemap.
+    DmaChannel *ch = &snes->dma->channel[0];
+    uint32_t src = ((uint32_t)ch->aBank << 16) | ch->aAdr;
 
-    for (uint16_t y = 0; y != 0x0180; y++) {   // 384 tiles → VRAM $0000-$17FF
-        // Burst 1: 16 bytes
-        snes_write(snes, 0x2115, 0x80);  // hVMAINC — increment after high byte
-        snes_write(snes, 0x4300, 0x01);  // DMA0 DMAP — 2 regs write twice ($2118/9)
-        snes_write(snes, 0x4305, 0x10);  // DMA0 DAS size lo = 0x0010
-        snes_write(snes, 0x4306, 0x00);
-        snes_write(snes, 0x420B, 0x01);  // hMDMAEN — trigger channel 0
+    snes_writeBBus(snes, 0x16, 0x00);   // $2116 VMADDL = $0000
+    snes_writeBBus(snes, 0x17, 0x00);   // $2117 VMADDH
 
-        snes_write(snes, 0x420B, 0x00);  // stz hMDMAEN
-        snes_write(snes, 0x2115, 0x00);  // stz hVMAINC
-        snes_write(snes, 0x4300, 0x00);  // stz DMAP
-
-        // Burst 2: 8 bytes
-        snes_write(snes, 0x4305, 0x08);  // DAS size = 0x0008 (high byte still 0)
-        snes_write(snes, 0x4306, 0x00);
-        snes_write(snes, 0x420B, 0x01);  // trigger channel 0
+    for (int t = 0; t < 0x180; t++) {   // 384 3bpp tiles (24 B each) → VRAM $0000+
+        // Burst 1: 16 B as words — DMAP=1 ($2118 then $2119), VMAIN=$80 (inc after $2119)
+        snes_writeBBus(snes, 0x15, 0x80);
+        for (int i = 0; i < 16; i++)
+            snes_writeBBus(snes, (uint8_t)(0x18 + (i & 1)), snes_read(snes, src++));
+        // Burst 2: 8 B low-byte only — DMAP=0 ($2118), VMAIN=$00 (inc after $2118)
+        snes_writeBBus(snes, 0x15, 0x00);
+        for (int i = 0; i < 8; i++)
+            snes_writeBBus(snes, 0x18, snes_read(snes, src++));
     }
-    // NOTE: this faithful register translation targets the real MMIO (vs the
-    // original WRAM-offset hallucination), but a DMA triggered from dispatched C
-    // does not flush on the isolated desktop harness (dma_startDma only sets
-    // dmaState; the transfer needs CPU cycles to run — F6 class). On device,
-    // where cycles flow continuously, it may run; unverified. The desktop host
-    // therefore interprets this routine (host_exclude_divergent). A device-safe
-    // native port likely needs an F6-style manual VRAM loop.
+
+    // Advance channel 0's A-bus address as the real transfers would have.
+    ch->aAdr  = (uint16_t)(src & 0xFFFF);
+    ch->aBank = (uint8_t)((src >> 16) & 0xFF);
 }
 
 // PITFALLS: 1 (DB=$B1, though these are IO writes to $43xx range), 
