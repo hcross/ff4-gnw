@@ -48,7 +48,12 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x02dddc, UpdateMonsterAnim_c },     /* btlgfx — per-frame animation state machine for monster slot */
     { 0x038009, ExecBattle_c },  /* battle */
     { 0x03805f, DrawMP_c },  /* battle */
-    { 0x038085, ExecBtlGfx_c },  /* battle — ExecBtlGfx_ext_emu now delegates via run_emulated_func (F10) */
+    /* 0x038085 ExecBtlGfx — REMOVED from dispatch (EXCL). BLOCKING animation: its body
+     * (btlgfx.asm:50 + cmd_anim/magic/monster_death) chains jsr WaitVblank/WaitFrame across
+     * multiple frames. ExecBtlGfx_c delegated to it via run_emulated_func (synchronous, single-frame)
+     * → the NMI doesn't advance during the sub-execution → WaitVblank loops → 50M-opcode guard trips
+     * (~1s freeze) → animation state corrupted → battle ends prematurely (monsters vanish,
+     * victory pose). Must stay INTERPRETED in the normal flow. Category WaitVblank=EXCL. */
     { 0x0382cb, InitHWRegs_c },  /* field */
     { 0x038379, RandXA_c },  /* battle */
     { 0x0383b9, Mult16_c },  /* battle */
