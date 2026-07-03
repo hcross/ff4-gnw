@@ -1,0 +1,11 @@
+# Build artifacts (desktop compiles this tree in place via
+# ff4-port/desktop/Makefile's FF4GNW ?= ../../ff4-gnw).
+*.o
+*.a
+*.dSYM/
+*.bak
+
+# Editor/OS cruft
+.DS_Store
+__pycache__/
+*.pyc
