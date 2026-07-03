@@ -1,5 +1,11 @@
-/* Auto-generated dispatch table for FF4 native-C bodies.
- * Re-run gen_dispatch.py whenever a translator run finishes. */
+/* HAND-MAINTAINED dispatch table for FF4 native-C bodies. Do NOT run
+ * gen_dispatch.py expecting it to regenerate this file — it no longer
+ * writes here (2026-07-03: doing so used to silently destroy the oracle
+ * machinery in dispatch_all.c and drop the linear-scan table down to a
+ * broken binary-search one). gen_dispatch.py is now read-only: it reports
+ * candidate routines not yet in the table (`python gen_dispatch.py`). To
+ * add an entry, hand-edit this file and dispatch_all.c per
+ * workflows/WF-DECOMP.md. */
 #pragma once
 #include <stdint.h>
 #include "snes/snes.h"
