@@ -52,7 +52,14 @@ remaining ~95 flagged `field` files not already fixed.
   state — they are the translator's *claim*, and that claim has been wrong
   for at least 4 confirmed routines (`CheckMenu_c`, `_00883d_c`,
   `_00885e_c`, and by strong inference the whole `menu` module).
-- The per-routine fuzz spike (`generate_spike.py`) cannot catch a DP bug on
-  its own today — `run_asm` forces `dp=0` unconditionally (tracked as
-  `registry`'s W1-3 fix). A routine passing its spike says nothing about
-  whether its DP assumption is correct.
+- `generate_spike.py` now runs both the asm and the C side at the
+  CONTRACT's declared `entry_mode: dp=`/`db=` (previously hardcoded to
+  `dp=0`/`db=0x7E` regardless of the CONTRACT — the structural blindness
+  that let `CheckMenu_c` pass its spike while reading the wrong address).
+  This closes the harness gap, but it is **not a substitute for verifying
+  the declared `dp=` itself is correct**: a routine whose CONTRACT still
+  wrongly claims `dp=0x0` (the whole `menu` module, most of `field`) now
+  gets tested at that wrong value on BOTH sides — consistently wrong, so
+  the spike still passes. The fix only pays off once the declared entry
+  state is fixed to match reality; verifying that per routine remains
+  open work (see the menu-module finding above).
