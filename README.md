@@ -5,6 +5,17 @@ The **compiled overlay** that runs Final Fantasy IV on the Nintendo Game & Watch
 [sylverb/game-and-watch-retro-go-sd](https://github.com/sylverb/game-and-watch-retro-go-sd)
 as a Homebrew overlay.
 
+> **New to reverse engineering, 65816 assembly, or SNES hardware?** Read
+> the umbrella repo's primer first —
+> [`ff4/docs/primer/`](https://github.com/hcross/ff4/tree/main/docs/primer).
+> For what's specific to *this* repository:
+> [`docs/dispatch-integration.md`](docs/dispatch-integration.md) (how a
+> validated routine ends up running here),
+> [`docs/firmware-and-hardware.md`](docs/firmware-and-hardware.md) (the
+> target device's constraints), and
+> [`docs/build-and-flash-explained.md`](docs/build-and-flash-explained.md)
+> (what the commands below are actually doing).
+
 ## Role in the ecosystem
 
 ```
@@ -47,6 +58,9 @@ unreviewed draft.
 - No audio output, no save-state loading yet.
 
 ## How to build and flash
+
+> What each flag below actually does, and why a power cycle is needed
+> after flashing: [`docs/build-and-flash-explained.md`](docs/build-and-flash-explained.md).
 
 Cloned as `external/ff4` of `hcross/game-and-watch-retro-go-sd`
 (branch `feat/ff4-port-scaffold`).
