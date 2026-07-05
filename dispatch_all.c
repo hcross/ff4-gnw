@@ -26,8 +26,16 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x00c0c4, PlayerSpriteTiles_c },  /* field */
     { 0x00c3bd, UpdateWhalePal_c },  /* field */
     { 0x00cb5f, TfrBGAnimGfx_c },  /* field */
-    { 0x00f533, UpdateBG2Scroll_c },  /* field — bank $00, full entry (loads $C9 guard) */
-    { 0x00f535, UpdateBG2ScrollSkip_c },  /* field — bank $00, secondary entry (caller pre-sets A) */
+    { 0x00f535, UpdateBG2ScrollSkip_c },  /* field — bank $00's real (sole) entry point; loads
+                                            the $C9 guard itself. The $00:f533 entry that used
+                                            to sit above this one was retired 2026-07-05: the
+                                            disassembly had a 2-byte offset error at this exact
+                                            spot ($00:f533 is not an instruction boundary, it's
+                                            the operand byte of the PRECEDING routine's LDX $43)
+                                            and was never a real call target. See D00F533/D00F535
+                                            in registry/dispatch_state.jsonl and MemPalace
+                                            wing=ff4-gnw room=obstacles-and-solutions for the
+                                            full finding. */
     { 0x00ffbc, InitCharProp_ext_c },  /* field */
     { 0x00ffe0, Vectors_c },  /* field */
     { 0x018010, UpdateCtrlField_ext_c },  /* menu */

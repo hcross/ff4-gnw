@@ -108,23 +108,46 @@ static void update_bg2_scroll_body(Snes *snes, uint8_t guard_val) {
     snes->cpu->a  = (snes->cpu->a & 0xFF00); /* low byte = 0 */
 }
 
-/* Entry $F533 — loads ram[dp + $C9] as the guard value (full entry point). */
+/* Bank $16 entry ($16:F533 — dispatch D16F533, untouched/separate from the
+ * bank-$00 finding below): loads ram[dp + $C9] as the guard value. This is a
+ * genuinely different, valid ROM location (own instruction stream in its own
+ * LoROM bank) and is not affected by the bank-$00 disassembly error. */
 void UpdateBG2Scroll_c(Snes *snes) {
     update_bg2_scroll_body(snes, snes->ram[(uint16_t)(snes->cpu->dp + 0xC9)]);
 }
 
-/* Entry $F535 — caller pre-loaded A; BNE tests A directly (skips lda $C9).
- * Dispatch entry: { 0x00f535, UpdateBG2ScrollSkip_c }.                   */
+/* Bank $00's SOLE real entry point, dispatched at $00:F535 (D00F535).
+ *
+ * FINDING (2026-07-05, see MemPalace wing=ff4-gnw room=obstacles-and-solutions
+ * for the full writeup): the disassembly (upstream/notes/ff4j-sfc.asm) had a
+ * 2-byte offset error here. It modeled two entry points -- a "full" one at
+ * $00:F533 that loads $C9, and a "skip" one at $00:F535 that assumes the
+ * caller pre-loaded the guard into A. Direct ROM-byte inspection disproves
+ * this: $00:F533 is not even an instruction boundary (it's the operand byte
+ * of the PRECEDING routine's `LDX $43` at $00:F532; $00:F534 is that
+ * routine's RTS). The real instruction at $00:F535 is `LDA $C9` -- there is
+ * only ONE entry point in this bank, and it always loads its own guard byte.
+ * The dead $00:F533 dispatch entry was retired (see dispatch_all.c and
+ * registry D00F533).
+ *
+ * This function keeps the name UpdateBG2ScrollSkip_c (rather than being
+ * merged into UpdateBG2Scroll_c above) because the registry's `name` field
+ * for dispatch D00F535 is not renameable through the sanctioned
+ * registry_promote.py write path -- see AGENTS.md on why
+ * dispatch_state.jsonl is never hand-edited. Despite the now-inaccurate
+ * "Skip" name, the body below is correct: it reads $C9 itself, exactly like
+ * UpdateBG2Scroll_c does, because that's what the real $00:F535 asm does. */
 void UpdateBG2ScrollSkip_c(Snes *snes) {
-    update_bg2_scroll_body(snes, (uint8_t)(snes->cpu->a & 0xFF));
+    update_bg2_scroll_body(snes, snes->ram[(uint16_t)(snes->cpu->dp + 0xC9)]);
 }
 
 // CONTRACT:
-//   inputs_reg:  a=guard_val (entry $F535 only)
 //   inputs_ram:  dp+$C9=1, $1700=1(abs), $0FE4=1(abs),
 //                dp+$5A=2, dp+$5C=2, dp+$66=2, dp+$68=2, dp+$7A=1
 //   output_ram:  dp+$5E=2, dp+$60=2 (plus dp+$66/dp+$68 in continuous path)
 //   entry_mode:  mf=any, xf=any, dp=caller's D, db=any
 //   NOTE: dp is caller-supplied ($0600 in field engine). All DP accesses
 //         use (dp + offset) to honour the caller's Direct Page register.
-// REVERSED_FUNCTION: field::UpdateBG2Scroll ($00:F533, $00:F535)
+// REVERSED_FUNCTION: field::UpdateBG2Scroll ($16:F533); UpdateBG2ScrollSkip_c
+//   is the real, sole bank-$00 entry despite the disassembly's stale
+//   $00:F533/$00:F535 two-entry model -- see the finding above.
