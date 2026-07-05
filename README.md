@@ -39,7 +39,7 @@ unreviewed draft.
 
 | Directory / file | Nature | G&W-specific? |
 |---|---|---|
-| `battle/`, `field/`, `menu/`, `cutscene/`, `sound/` | 240 validated C translations of FF4 routines | No — pure 65816 logic, no hardware dependency |
+| `battle/`, `field/`, `menu/`, `cutscene/`, `sound/` | Validated C translations of FF4 routines (current count: see [`DISPATCH_REGISTRY.md`](https://github.com/hcross/ff4/blob/main/DISPATCH_REGISTRY.md) in the umbrella repo — generated, changes as routines are ported) | No — pure 65816 logic, no hardware dependency |
 | `dispatch_all.{c,h}` | Binary-search dispatch table; `ff4_dispatch_try` is called on every JSR/JSL | No — generic dispatch mechanism |
 | `ff4_helpers.c` | `*_emu` stubs for routines not yet translated; the few already translated ones delegate to their `_c` body | Partially — `update_ctrl_field_emu` reconstructs G&W input; most stubs are generic weak no-ops |
 | `main.c` | `ff4_init`, `ff4_step`, `ff4_blit_to_lcd` (BGR888→RGB565) | **Yes** — G&W LCD wiring |
@@ -51,8 +51,14 @@ unreviewed draft.
 
 - Boots FF4 through the Square Enix splash to the title screen on real
   hardware (G&W Mario, 64 MB extflash mod, JTAG).
-- **213 routines dispatched** — battle 92, field 114, menu 8, cutscene 20,
-  sound 6 (some files contain multiple entry points).
+- **Routines dispatched, by module and maturity level: see
+  [`DISPATCH_REGISTRY.md`](https://github.com/hcross/ff4/blob/main/DISPATCH_REGISTRY.md)**
+  in the umbrella repo — generated from the registry, not hand-counted
+  here, so it never drifts out of date the way a static number in this
+  README would (some files contain multiple entry points, which is part
+  of why a quick manual count is easy to get wrong — see the umbrella
+  repo's [`docs/primer/00-glossary.md`](https://github.com/hcross/ff4/blob/main/docs/primer/00-glossary.md#project-specific-terms)
+  for what "dispatched" and the maturity levels mean).
 - SPC700 mailbox handshake left to LakeSnes' real APU; `InitSound_ext` and
   `ExecSound_ext` are in the `gen_dispatch.py` skip list (see commit 17823b7).
 - No audio output, no save-state loading yet.
