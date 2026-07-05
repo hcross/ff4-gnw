@@ -155,7 +155,12 @@ void CheckSpriteVisible_c(Snes *snes) {
         return;
     }
 
-    uint16_t xi = (uint16_t)mon << 2;  /* monster*4 */
+    /* monster*4. asm computes the index in an 8-bit accumulator
+     * (LDA $47/ASL/ASL/TAX, mf=true) so it wraps at 256; truncate to 8-bit
+     * BEFORE widening to match (benign for the real 0..5 range, but closes
+     * the latent width-truncation gap for mon>=64 — same bug class as
+     * BuildOAMEntries_c's y_row). */
+    uint16_t xi = (uint16_t)(uint8_t)(mon << 2);
     uint8_t attr = (snes->ram[0xF015 + xi] & 0xF7)
                  | (snes->ram[0xF016 + xi] & 0xB8)
                  | (snes->ram[0xF018 + xi] & 0x01);
@@ -1528,8 +1533,11 @@ void InitMonsterAnim_c(Snes *snes) {
     uint8_t mon_x = (uint8_t)(snes->cpu->x);  /* entry X = slot index */
     uint8_t mon47 = snes->ram[0x47];
 
-    /* Prologue guard: check $F015[mon47*4] bits[7:6] and $F2BC[mon47] */
-    uint16_t xi4 = (uint16_t)((uint16_t)mon47 << 2);
+    /* Prologue guard: check $F015[mon47*4] bits[7:6] and $F2BC[mon47].
+     * asm computes the index in an 8-bit accumulator (LDA $47/ASL/ASL/TAX,
+     * mf=true) so it wraps at 256; truncate to match (benign for the 0..5
+     * slot range seen in-game, but faithful to the asm for any $47). */
+    uint16_t xi4 = (uint16_t)(uint8_t)(mon47 << 2);
     if (snes->ram[0xF015 + xi4] & 0xC0) {
         /* Early exit A: bits set — PHX(30)+LDA_dp(24)+ASL(14)+ASL(14)+TAX(14)+
          * LDA_abs_X(38)+AND_imm(16)+BNE_t(22)+PLX(36)+RTS(42) = 250; inject=234 */
@@ -1731,7 +1739,7 @@ dafe_done:;
         uint32_t cy;
 
         /* Classify which path was taken */
-        uint16_t xi4_l = (uint16_t)((uint16_t)mon47 << 2);
+        uint16_t xi4_l = (uint16_t)(uint8_t)(mon47 << 2);  /* 8-bit index, matches asm */
         bool bits_c0 = (snes->ram[0xF015 + xi4_l] & 0xC0) != 0;
         bool f2bc_nz = (snes->ram[0xF2BC + mon47] != 0);
         /* Note: these were evaluated before we modified RAM, so re-read is safe
@@ -1941,8 +1949,12 @@ void BuildOAMEntries_c(Snes *snes) {
             slot, snes->ram[0xF078], snes->ram[0xF07B + (slot<<2)]);
 #endif
 
-    /* TXA/ASL/ASL/TAY: y_row = slot * 4 (per-object table row offset) */
-    uint16_t y_row = (uint16_t)((uint16_t)slot << 2);
+    /* TXA/ASL/ASL/TAY: y_row = slot * 4 (per-object table row offset).
+     * A is 8-bit here (mf=true): each ASL truncates to 8 bits, so the
+     * real hardware result wraps at 256, not at 65536 like a plain
+     * uint16_t shift would. Mask BEFORE widening, or slot>=64 silently
+     * diverges from the original (found via region-spike, 2026-07-05). */
+    uint16_t y_row = (uint16_t)(uint8_t)(slot << 2);
 
     /* BF 15 FD 16: tile count from ROM $16:FD15+slot */
     uint8_t tile_count = snes->cart->rom[LOROM(0x16, 0xFD15) + slot];
@@ -1984,8 +1996,12 @@ void BuildOAMEntries_c(Snes *snes) {
         snes->ram[0xF07D + y_row]++;
     }
 
-    /* DD26: pointer setup */
-    uint16_t slot_w = (uint16_t)((uint16_t)slot << 1);  /* X = slot*2 */
+    /* DD26: pointer setup. TXA/ASL/TAX: A is 8-bit (mf=true), the ASL
+     * truncates to 8 bits before TAX widens it back to 16-bit X --
+     * truncate before widening or slot>=128 silently diverges (same bug
+     * class as y_row above, found by a higher-trial-count re-run,
+     * 2026-07-05). */
+    uint16_t slot_w = (uint16_t)(uint8_t)(slot << 1);
     uint8_t x_base = snes->ram[0x6CF3 + slot_w];
     snes->ram[0x12] = x_base;  /* STA $12 DP side-effect */
     uint8_t y_base = snes->ram[0x6CF4 + slot_w];
