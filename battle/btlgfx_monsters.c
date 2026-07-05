@@ -333,21 +333,25 @@ void InitMonsterAnim_c(Snes *snes);
  * This is identical to the InitMonsterAnim "second-object path" ($DBD9).
  * ----------------------------------------------------------------------- */
 static void dbda_sub(Snes *snes) {
-    uint8_t mon_x = (uint8_t)(snes->cpu->x);
+    /* FIX (2026-07-05): the real $02:DBDA does `LDA $47 / TAX` at its OWN
+     * entry ($02:DBDB-DBDD), reassigning X to mon47 for the rest of its
+     * body -- every EFCE/EFC5/EFD1/EFD3/EFCF/F2BC/F0AF,X access below uses
+     * mon47, NOT the caller's X (the slot*16 value UpdateMonsterAnim_c
+     * calls mon_x). Y ($F015,Y) is untouched by this routine's TAX. */
     uint8_t mon47 = snes->ram[0x47];
     /* Early exit: F2BC or F0AF non-zero */
     if (snes->ram[0xF2BC + mon47] || snes->ram[0xF0AF + mon47]) {
         return;
     }
     /* Clear low nibble of EFCE */
-    snes->ram[0xEFCE + mon_x] &= 0x0F;
-    uint8_t efc5 = snes->ram[0xEFC5 + mon_x];
+    snes->ram[0xEFCE + mon47] &= 0x0F;
+    uint8_t efc5 = snes->ram[0xEFC5 + mon47];
     if (efc5 == 0xB0) {
-        snes->ram[0xEFCE + mon_x] |= 0x01;
+        snes->ram[0xEFCE + mon47] |= 0x01;
         return;
     }
-    snes->ram[0xEFD1 + mon_x] = 0;
-    snes->ram[0xEFD3 + mon_x] = 0;
+    snes->ram[0xEFD1 + mon47] = 0;
+    snes->ram[0xEFD3 + mon47] = 0;
     uint8_t raw_speed;
     if (efc5 == 0xC0) {
         raw_speed = 8;
@@ -356,17 +360,17 @@ static void dbda_sub(Snes *snes) {
                     ? snes->cart->rom[LOROM(0x16, 0xFCF3) + mon47]
                     : snes->cart->rom[LOROM(0x16, 0xFCEE) + mon47];
     }
-    snes->ram[0xEFCF + mon_x] = raw_speed;
-    /* Apply $F015,Y attribute bits 5-4 */
+    snes->ram[0xEFCF + mon47] = raw_speed;
+    /* Apply $F015,Y attribute bits 5-4 (Y untouched by this routine's TAX) */
     uint16_t y = snes->cpu->y;
     uint8_t attr30 = snes->ram[0xF015 + y] & 0x30;
     if (attr30 == 0) {
-        snes->ram[0xEFCE + mon_x] |= 0x40;
+        snes->ram[0xEFCE + mon47] |= 0x40;
     } else if (attr30 & 0x20) {
-        snes->ram[0xEFCE + mon_x] |= 0x10;
-        snes->ram[0xEFCF + mon_x] = (uint8_t)(snes->ram[0xEFCF + mon_x] << 1);
+        snes->ram[0xEFCE + mon47] |= 0x10;
+        snes->ram[0xEFCF + mon47] = (uint8_t)(snes->ram[0xEFCF + mon47] << 1);
     } else {
-        snes->ram[0xEFCF + mon_x] = (uint8_t)(snes->ram[0xEFCF + mon_x] << 1);
+        snes->ram[0xEFCF + mon47] = (uint8_t)(snes->ram[0xEFCF + mon47] << 1);
     }
 }
 
@@ -399,7 +403,11 @@ static void dbda_sub(Snes *snes) {
  *   total full (attr30=0): 182+314+180+16+38+38+38+16+38+24+38+38+16+22+38+16+38+36+36+42 = 1204 → inject=1188
  * ----------------------------------------------------------------------- */
 static void dc52_sub(Snes *snes) {
-    uint8_t mon_x = (uint8_t)(snes->cpu->x);
+    /* FIX (2026-07-05): same class of bug as dbda_sub above -- the real
+     * $02:DC52 does `LDA $47 / TAX` at its own entry, reassigning X to
+     * mon47 for the rest of its body. Every table access below
+     * (EFC5/EFD1/EFD3/EFCE/EFCF,X) uses mon47, not the caller's mon_x.
+     * Y ($F015,Y) is untouched. */
     uint8_t mon47 = snes->ram[0x47];
 
     /* Preamble: PHX(30)+LDA_dp(24)+TAX(14)+LDA_abs_X(38) = 106 */
@@ -414,7 +422,7 @@ static void dc52_sub(Snes *snes) {
         return;
     }
 
-    uint8_t efc5 = snes->ram[0xEFC5 + mon_x];
+    uint8_t efc5 = snes->ram[0xEFC5 + mon47];
     /* Load speed from table A or B based on F014.
      * Both F014=0 and !=0 paths cost 314 cycles (DC62..DC87 symmetric). */
     uint8_t speedA = snes->cart->rom[LOROM(0x16, 0xFCEE) + mon47];
@@ -437,7 +445,7 @@ static void dc52_sub(Snes *snes) {
 
     /* Full path body: BEQ_nt(16)+STZ(38)+STZ(38)+LDA_abs_X(38)+AND_imm(16)+STA_abs_X(38)
      *                 +LDA_dp(24)+STA_abs_X(38)+LDA_abs_Y(38)+AND_imm(16)+... */
-    snes->ram[0xEFCE + mon_x] &= 0x0F;
+    snes->ram[0xEFCE + mon47] &= 0x0F;
     /* EFC5 sentinel: B0=set bit0, C0=use speed 8, else=speed_other */
     if (efc5 == 0xB0) {
         /* B0 sentinel: AND_result(EFCE&0x0F) already done, then ORA #01 → different from below.
@@ -450,7 +458,7 @@ static void dc52_sub(Snes *snes) {
          * But for B0, the C code just sets EFCE bit0 and returns. Full path for B0:
          * 182+314+efc5_check+16(BEQ_nt)+38+38+38+16+38+24+38+38+16+22+16+38+36+36+42 = complex.
          * For now: approximate with full path. */
-        snes->ram[0xEFCE + mon_x] |= 0x01;
+        snes->ram[0xEFCE + mon47] |= 0x01;
         /* Full path B0 estimate: 182+314+efc5_check+16+38+38+38+16+38+24+38+38+16+22+16+38+PLX+PLY+RTS */
         inject_cycles(snes, 182 + 314 + efc5_check + 16+38+38+38+16+38+24+38+38+16+22+16+38+36+36+42 - 16);
         return;
@@ -461,9 +469,9 @@ static void dc52_sub(Snes *snes) {
     } else {
         raw_speed = speed_other;
     }
-    snes->ram[0xEFD1 + mon_x] = 0;
-    snes->ram[0xEFD3 + mon_x] = 0;
-    snes->ram[0xEFCF + mon_x] = raw_speed;
+    snes->ram[0xEFD1 + mon47] = 0;
+    snes->ram[0xEFD3 + mon47] = 0;
+    snes->ram[0xEFCF + mon47] = raw_speed;
     uint16_t y = snes->cpu->y;
     uint8_t attr30 = snes->ram[0xF015 + y] & 0x30;
     /* Cycle injection for full path:
@@ -473,13 +481,13 @@ static void dc52_sub(Snes *snes) {
     uint32_t full_base = 182 + 314 + efc5_check + 16 + 38+38+38+16+38+24+38+38+16;
     if (attr30 == 0) {
         /* BEQ_t(22)+LDA_EFCE(38)+ORA_#40(16)+STA_EFCE(38)+PLX(36)+PLY(36)+RTS(42) */
-        snes->ram[0xEFCE + mon_x] |= 0x40;
+        snes->ram[0xEFCE + mon47] |= 0x40;
         inject_cycles(snes, full_base + 22+38+16+38+36+36+42 - 16);
     } else if (attr30 & 0x20) {
         /* BEQ_nt(16)+AND_#20(16)+BEQ_nt(16)+LDA_EFCE(38)+ORA_#10(16)+STA_EFCE(38)
          * +LDA_EFCF(38)+ASL(14)+STA_EFCF(38)+BRA(22)+STA_EFCE(38)+PLX(36)+PLY(36)+RTS(42) */
-        snes->ram[0xEFCE + mon_x] |= 0x10;
-        snes->ram[0xEFCF + mon_x] = (uint8_t)(snes->ram[0xEFCF + mon_x] << 1);
+        snes->ram[0xEFCE + mon47] |= 0x10;
+        snes->ram[0xEFCF + mon47] = (uint8_t)(snes->ram[0xEFCF + mon47] << 1);
         inject_cycles(snes, full_base + 16+16+16+38+16+38+38+14+38+22+38+36+36+42 - 16);
     } else {
         /* BEQ_nt(16)+AND_#20(16)+BEQ_t(22)+LDA_EFCF(38)+ASL(14)+STA_EFCF(38)
@@ -487,9 +495,127 @@ static void dc52_sub(Snes *snes) {
          * Actually looking at ROM more carefully for the attr30!=0,bit5=0 path:
          * DCBC: F0 15 BEQ DCD3 → not taken (16); DCBE: 29 20 AND#20 → BEQ DCCA (22 t or 16 nt)
          * If attr20=0 (attr30 bit5=0): BEQ_t → DCCA: LDA_EFCF(38)+ASL(14)+STA_EFCF(38)+BRA_DCD8(22) → DCD8: STA_EFCE(38)+PLX+PLY+RTS */
-        snes->ram[0xEFCF + mon_x] = (uint8_t)(snes->ram[0xEFCF + mon_x] << 1);
+        snes->ram[0xEFCF + mon47] = (uint8_t)(snes->ram[0xEFCF + mon47] << 1);
         inject_cycles(snes, full_base + 16+16+22+38+14+38+22+38+36+36+42 - 16);
     }
+}
+
+/* ===========================================================================
+ * Zero-path sub-routines (added 2026-07-05): three routines the zero-path
+ * ("re-init from scratch", EFCF[slot]==0) calls that were previously stubbed
+ * with cycle-only placeholders. See upstream/notes/ff4j-sfc.asm for the
+ * ground-truth disassembly this is transcribed from. Mirrors
+ * translator/port/battle/UpdateMonsterAnim.c's spike-side copies verbatim.
+ * ========================================================================= */
+
+/* --- dadc_sub ($02:DADC), called via JSR $DADC at $02:DEE2 ---
+ * 16 opcodes, straight-line, no loop, no MMIO. Computes X=(mon47+9)*32 in a
+ * self-contained REP/SEP #$20 bracket (16-bit A) and writes three sprite-
+ * staging table entries at $ED56/$ED58/$ED60 (the same 32-byte-per-monster
+ * block DrawMonsterSprite_c already writes at $ED50+). Caller's X (mon_x) is
+ * saved/restored via PHX/PLX and is untouched on return. */
+static void dadc_sub(Snes *snes) {
+    uint8_t mon47 = snes->ram[0x47];
+    uint16_t y_oam = (uint16_t)((mon47 + 9) << 5);  /* TXA/ASL x5, 16-bit (REP #$20) */
+    snes->ram[0xED56 + y_oam]     = 0xF6;
+    snes->ram[0xED56 + y_oam + 1] = 0x7D;            /* STA $ED56,X = #$7DF6 */
+    snes->ram[0xED58 + y_oam]     = 0x30;
+    snes->ram[0xED58 + y_oam + 1] = 0x7D;            /* STA $ED58,X = #$7D30 */
+    snes->ram[0xED60 + y_oam]     = 0x00;            /* TDC; SEP #$20; STA $ED60,X (8-bit) */
+}
+
+/* --- ea7d_div ($01:EA7D), called via JSR $EA7D from eaae_sub below ---
+ * 16-bit unsigned restoring division: dividend $1C/$1D, divisor $1E/$1F ->
+ * quotient $20/$21, remainder $22/$23. Self-brackets REP/SEP #$20 and
+ * PHA/PLA, so A and mode are fully restored on return -- the only observable
+ * output is WRAM $20-$23. The BEQ guards on both dividend==0 and divisor==0
+ * (forcing quotient=remainder=0) plus the 16-iteration shift-subtract loop
+ * are algebraically equivalent to plain unsigned / and % -- no bit-fidelity
+ * loop needed since neither A nor flags survive past this routine's RTS. */
+static void ea7d_div(Snes *snes) {
+    uint16_t dividend = (uint16_t)(snes->ram[0x1C] | ((uint16_t)snes->ram[0x1D] << 8));
+    uint16_t divisor  = (uint16_t)(snes->ram[0x1E] | ((uint16_t)snes->ram[0x1F] << 8));
+    uint16_t quotient = 0, remainder = 0;
+    if (dividend != 0 && divisor != 0) {
+        quotient  = dividend / divisor;
+        remainder = dividend % divisor;
+    }
+    snes->ram[0x20] = (uint8_t)(quotient & 0xFF);
+    snes->ram[0x21] = (uint8_t)(quotient >> 8);
+    snes->ram[0x22] = (uint8_t)(remainder & 0xFF);
+    snes->ram[0x23] = (uint8_t)(remainder >> 8);
+}
+
+/* --- eaae_sub ($01:EAAE), called via JSL $01:EAAE at $02:DEFA ---
+ * Looks up a per-monster-type index (long ROM read, bank $0D), uses it to
+ * read a WRAM byte at $2A16,X (lands inside the $2A04-$2B14 timer table per
+ * upstream/notes/ff4j-sfc-ram-map.txt -- read here as a plain lookup byte,
+ * not semantically as a timer; the mechanical translation is unambiguous
+ * regardless), divides it by 10 (JSR $EA7D), and writes the remainder+0x70
+ * to $F07A and the quotient+0x70 to $F079 (a two-digit BCD-ish display
+ * split). Finishes by marking $EFD0,X=4 and $F078=9. */
+static void eaae_sub(Snes *snes) {
+    uint8_t mon_x = (uint8_t)(snes->cpu->x);   /* saved by PHX, restored before use */
+    uint8_t mon47 = snes->ram[0x47];
+    uint8_t idx1  = snes->cart->rom[LOROM(0x0D, 0xFD17) + mon47];  /* long ROM, bank $0D */
+    uint8_t idx2  = snes->ram[0x2A16 + idx1];                       /* absolute, DB=$7E -> WRAM */
+
+    snes->ram[0x1C] = idx2; snes->ram[0x1D] = 0;   /* dividend */
+    snes->ram[0x1E] = 0x0A; snes->ram[0x1F] = 0;   /* divisor = 10 */
+    ea7d_div(snes);
+
+    uint8_t remainder = snes->ram[0x22];
+    uint8_t quotient  = snes->ram[0x20];
+    snes->ram[0xF07A] = (uint8_t)(remainder + 0x70);
+    snes->ram[0xF079] = (uint8_t)(quotient  + 0x70);
+
+    snes->ram[0xEFD0 + mon_x] = 4;
+    snes->ram[0xF078] = 9;
+}
+
+/* --- hardmult_sub ($02:85D2), called via JSR $85D2 from e018_sub below ---
+ * Inlined copy of the already-ported HardMult_btlgfx_c (translator/port/
+ * battle/HardMult_btlgfx.c) -- kept as a local duplicate rather than a
+ * cross-file call since this is the (trivial, already-proven) 8x8->16
+ * hardware-multiply body. */
+static void hardmult_sub(Snes *snes) {
+    uint8_t mc = snes->ram[0x1C];
+    uint8_t mp = snes->ram[0x1E];
+    uint16_t product = (uint16_t)mc * (uint16_t)mp;
+    snes->ram[0x20] = (uint8_t)(product & 0xFF);
+    snes->ram[0x21] = (uint8_t)(product >> 8);
+}
+
+/* --- e018_sub ($02:E018), called via JSR $E018 at $02:DFAF ---
+ * Signed sine-table lookup (long ROM read, bank $1C) * 4 via hardware
+ * multiply (delegates to hardmult_sub). If the table byte is negative,
+ * negate it (one's complement) before multiplying, then two's-complement
+ * negate the high byte of the product back and check for a still-negative
+ * overflow; if the table byte is positive, use the product's high byte
+ * as-is and check for an unexpected sign flip. Returns the signed result in
+ * A; *out_carry reports the overflow condition (the sole real caller, at
+ * $02:DFAF, ignores it -- unconditional CLC right after the call -- kept
+ * for fidelity in case another caller is found later). */
+static uint8_t e018_sub(Snes *snes, uint8_t angle_index, bool *out_carry) {
+    int8_t sine_val = (int8_t)snes->cart->rom[LOROM(0x1C, 0xFF00) + angle_index];
+    bool negative = sine_val < 0;
+    snes->ram[0x1C] = negative ? (uint8_t)(~(uint8_t)sine_val) : (uint8_t)sine_val;
+    /* $1E is set by the caller before this is invoked (fixed at 4 for the
+     * $DFAF call site) -- do not overwrite it here. */
+    hardmult_sub(snes);
+
+    uint8_t hi = snes->ram[0x21];
+    uint8_t result;
+    bool overflow;
+    if (negative) {
+        result = (uint8_t)(~hi + 1);          /* EOR #$FF; INC -> two's-complement negate */
+        overflow = (result & 0x80) != 0;
+    } else {
+        result = hi;
+        overflow = (hi & 0x80) != 0;
+    }
+    if (out_carry) *out_carry = overflow;
+    return result;
 }
 
 void UpdateMonsterAnim_c(Snes *snes) {
@@ -498,7 +624,13 @@ void UpdateMonsterAnim_c(Snes *snes) {
     /* Y register at entry holds slot*2 (outer loop: TAY after ASL A once).
      * But the DDDC preamble immediately does LDA $47 / ASL / ASL / TAY,
      * changing Y to $47*4 = mon47*4 before any F015..F018 loads. */
-    uint16_t entry_y = (uint16_t)mon47 * 4;  /* = $47*4, as set by preamble TAY */
+    /* FIX (2026-07-05): ASL/ASL runs in 8-bit accumulator mode (mf=true) on
+     * real hardware, truncating before TAY widens to 16-bit Y -- the previous
+     * `(uint16_t)mon47 * 4` skipped that truncation. Also: entry_y was never
+     * written back to snes->cpu->y, so any F015..F018 access below that reads
+     * cpu->y directly (rather than the local entry_y) saw the stale caller Y. */
+    uint16_t entry_y = (uint16_t)(uint8_t)(mon47 << 2);  /* = $47*4, as set by preamble TAY */
+    snes->cpu->y = entry_y;
 
     snes->ram[0x64] = 0;  /* STZ $64 */
 
@@ -586,19 +718,9 @@ void UpdateMonsterAnim_c(Snes *snes) {
         /* $DEDC: LDA $0E (24) + AND #$01 (16) → BEQ/BNE $DEEA */
         cy += 24 + 16;
         if (f015 & 0x01) {
-            /* BEQ nt (16) + JSR $DADC (48 + body - 16) ... but DADC is not ported.
-             * Run via interpreter: inject JSR(48)+DADC_body cycles. DADC is a small
-             * routine; for now inject a stub cycle count.
-             * Actually: for this path, we must NOT call DADC via dispatch (it's not dispatched).
-             * We let the interpreter handle it inline here but we're in C...
-             * DADC is not dispatched; we need to call it. For now, stub it as 0 body + mark.
-             * DADC: we skip its body but account for JSR(48)+RTS(42) = 90 minimum.
-             * TODO: port DADC properly. For now use a placeholder. */
-            cy += 16;  /* BEQ nt */
-            /* JSR $DADC: 48 + body */
-            /* DADC is not dispatched; approximate with 48+some_body */
-            /* Read DADC at $02:DADC to understand it */
-            cy += 48 + 100;  /* placeholder: JSR + ~100 body cycles */
+            /* BEQ nt (16) + JSR $DADC (46 + body, see dadc_sub above) */
+            cy += 16 + 46;
+            dadc_sub(snes);
             /* LDA #$04 (16) + STA $EFD0,X (38) */
             snes->ram[0xEFD0 + mon_x] = 4;
             cy += 16 + 38;
@@ -617,26 +739,14 @@ void UpdateMonsterAnim_c(Snes *snes) {
                 cy += 22 + 36 + 24;  /* BNE_t(22) + PLY(36) + JMP(24) */
                 goto de87_dfd0;
             } else {
-                /* BNE nt (16) + PLY (36) + ... $DEFA: JSL or similar?
-                 * Actually $DEFA is weird: 22 AE 01 EA ... at $DEFA.
-                 * From disasm: $DEFA: 22 = JSL? No: $DEFA: 22 ?? ?? ?? = JSL.
-                 * Actually looking at disasm output: $DEFA: 22 and next $DEFB: AE = LDX abs $01EA
-                 * But 22 is JSL — 4 bytes: 22 lo hi bank. So $DEFA: 22 AE 01 EA = JSL $EA01AE?
-                 * That's odd. Let me re-read: from the disasm "$DEFA: 22" line had no decode.
-                 * $DEFB: AE LDX abs means AE was decoded as LDX, so byte at $DEFB = AE, $DEFC = 01, $DEFD = EA.
-                 * So $DEFB-$DEFD = LDX $EA01... and $DEFA: 22 is some unknown opcode (not in table).
-                 * In 65816: 22 = JSL long (4 bytes). So $DEFA: 22 AE 01 EA = JSL $EA01AE. That's bank $EA, addr $01AE.
-                 * This appears to be calling some bank $EA routine. Skip for now with placeholder.
-                 * Actually wait: from the disasm output the next decoded instruction after 22 was:
-                 * $DEFB: AE = LDX abs $01EA... which means $DEFA was NOT decoded as a 4-byte JSL.
-                 * Maybe $DEFA: 22 is just an unknown 1-byte (or the decoder doesn't know it).
-                 * In 65816, opcode $22 = JSL long (4 bytes). So $DEFA: 22 AE 01 EA = JSL $EA01AE.
-                 * Then $DEFE: 4C D0 DF = JMP $DFD0. So the path is:
-                 * PHY(30)+LDA_dp(24)+TAY(14)+LDA_abs_Y(38)+BNE_nt(16)+PLY(36)+JSL(54)+JMP(24) */
+                /* BNE nt (16) + PLY (36) + JSL $01:EAAE (see eaae_sub above)
+                 * + JMP $DFD0 (24). CORRECTION (2026-07-05): the original
+                 * placeholder guessed the target was bank $EA ($EA:01AE) from
+                 * a misread of the disassembly; verified directly against
+                 * upstream/notes/ff4j-sfc.asm: the bytes are 22 AE EA 01 =
+                 * JSL $01EAAE (bank $01, offset $EAAE), not bank $EA. */
                 cy += 16 + 36 + 54 + 24;  /* BNE_nt + PLY + JSL + JMP */
-                /* JSL $EA01AE: some function. We skip its body since it's in bank $EA (not relevant to our port) */
-                /* Placeholder for JSL body cycles: 200 */
-                cy += 200;
+                eaae_sub(snes);
                 goto de87_dfd0;
             }
         }
@@ -761,13 +871,14 @@ void UpdateMonsterAnim_c(Snes *snes) {
             cy += 56;
             uint8_t calc = (uint8_t)(((mon47 << 2) + adc_val) << 3);
             snes->ram[0x1E] = 4;
-            /* JSR $E018: 48 + body. E018 is a lookup+multiply routine. Stub for now: 48+200 */
-            cy += 48 + 200;  /* placeholder for E018 body */
-            (void)calc;
+            /* JSR $E018: 46 + body (see e018_sub above, calls hardmult_sub) */
+            cy += 46;
+            bool e018_carry;
+            uint8_t e018_result = e018_sub(snes, calc, &e018_carry);
+            (void)e018_carry;  /* this call site ignores it (unconditional CLC next) */
             /* FA: PLX (36) + CLC (14) + ADC #$F8 (16) + STA $EFC8,X (38) + LDA #$06 (16) + STA $F078 (34) + JMP $DFD0 (24) */
             cy += 36 + 14 + 16 + 38 + 16 + 34 + 24;
-            /* Note: result of E018 + $F8 → EFC8,X. We don't have the real result; use 0 placeholder */
-            snes->ram[0xEFC8 + mon_x] = 0;  /* TODO: compute properly */
+            snes->ram[0xEFC8 + mon_x] = (uint8_t)(e018_result + 0xF8);
             snes->ram[0xF078] = 6;
             goto de87_dfd0;
         }
