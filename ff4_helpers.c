@@ -251,9 +251,32 @@ static uint16_t map_ctrl_word(Snes *snes, uint16_t word, uint16_t table_off) {
  * wrong place, so the menu never saw it. Verified cpu->dp matches the old
  * stack reconstruction exactly on the NMI/field path ($0600 both ways) and
  * gives the correct value on the MainMenu_ext path where the stack hack
- * didn't. */
+ * didn't.
+ *
+ * SELF-HEAL (2026-07-06, same day as the fix above): every savestate
+ * captured before this fix was saved under a no-op InitCtrl_ext2_c, so its
+ * $1A05-$1A1C button-remap table is baked into WRAM as 24 zero bytes —
+ * loading any such savestate (all 11 catalogued fixtures, any interactive
+ * SDL save slot from before today) now maps every button to nothing at
+ * all, since map_ctrl_word ORs in a real table entry per bit and an
+ * all-zero table ORs in nothing regardless of what's pressed. Confirmed by
+ * Hoani after rebuilding the SDL build and loading the worldmap fixture:
+ * neither field movement nor any menu could be triggered anymore — the
+ * fix above is correct but this table-staleness issue makes it
+ * unusable in practice without a recapture. Rather than require every
+ * existing savestate to be recaptured, detect an all-zero table here and
+ * populate it on the spot (init_ctrl_emu is idempotent and cheap — a
+ * 24-byte ROM copy, not a hot-path cost). The real default table always
+ * has several nonzero bytes (verified against ROM), so this check never
+ * false-triggers on a legitimately initialized table. */
 void update_ctrl_field_emu(Snes *snes) {
     if (snes == 0) return;
+
+    bool table_uninitialized = true;
+    for (int i = 0; i < 24; i++) {
+        if (snes->ram[0x1A05 + i] != 0) { table_uninitialized = false; break; }
+    }
+    if (table_uninitialized) init_ctrl_emu(snes);
 
     /* Cycle budget: the real UpdateCtrl ($14:FD12) consumes 7022 MC more than
      * our stub.  Measured empirically via cycle-counter watchpoints at two
