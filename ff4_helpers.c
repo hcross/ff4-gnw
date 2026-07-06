@@ -108,7 +108,19 @@ void rand_emu(Snes *snes) {                              /* F1: Rand($03:8593) =
 }
 __attribute__((weak)) void rand_summon_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void remove_target_emu(Snes *snes) { (void)snes; }
-__attribute__((weak)) void reset_sprites_emu(Snes *snes) { (void)snes; }
+/* reset_sprites_emu: ResetSprites ($00:9177), called by InitMapRAM_c on
+ * every map load/transition. Sets all 128 OAM sprite entries' Y coordinate
+ * to $F0 (off-screen, the standard "hide sprite" sentinel: WRAM $0301,X
+ * stride 4, 128 entries -> $0301-$04FD) then zeroes the OAM high-table
+ * mirror ($0500-$051F, 32 bytes). FIX (2026-07-06): was a no-op weak stub
+ * (part of the InitMapRAM_c investigation into the "exit a building,
+ * land in the sea, stuck" bug -- see field/InitMapRAM.c). Straight-line
+ * WRAM writes only, no branches/state to get wrong. */
+void reset_sprites_emu(Snes *snes) {
+    if (snes == 0) return;
+    for (int i = 0; i < 0x200; i += 4) snes->ram[0x0301 + i] = 0xF0;
+    for (int i = 0; i < 0x20; i++) snes->ram[0x0500 + i] = 0x00;
+}
 /* select_obj_emu: executes SelectObj ($03:8489) in the interpreter.
  * Computes $A6 (char/monster property ptr) and $3530:$3531 (timer-array ptr)
  * from entity index in A; calls Mult8_c ($03:83E0) internally. */
@@ -309,8 +321,8 @@ void update_ctrl_field_emu(Snes *snes) {
     uint16_t ctrl2_mapped = map_ctrl_word(snes, prevraw_word, table_off);
 
 #ifdef DEBUG_UPDATECTRL
-    printf("[updatectrl] d=%04X cpudp=%04X sp=%04X port1=%04X active=%04X prevraw=%04X ctrl1m=%04X ctrl2m=%04X\n",
-           d, snes->cpu->dp, sp, port1, active_word, prevraw_word, ctrl1_mapped, ctrl2_mapped);
+    printf("[updatectrl] d=%04X port1=%04X active=%04X prevraw=%04X ctrl1m=%04X ctrl2m=%04X\n",
+           d, port1, active_word, prevraw_word, ctrl1_mapped, ctrl2_mapped);
 #endif
     snes->ram[(uint16_t)(d + 0x00)] = (uint8_t)(ctrl1_mapped & 0xFF);
     snes->ram[(uint16_t)(d + 0x01)] = (uint8_t)(ctrl1_mapped >> 8);
