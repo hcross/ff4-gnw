@@ -15,7 +15,11 @@ void Cmd_08_c(Snes *snes) {
         ram[0x34CA] = 0x0B;
         ram[0x26D2] = 0x19;
     } else {
-        uint8_t r = rand_emu(snes);  // jsr Rand
+        // FIX (2026-07-06, KNOWN_FINDINGS.md F1): rand_emu is `void` -- the
+        // real result lives in cpu->a, not a C return value (same class of
+        // bug as CalcHits.c's Rand99_emu call; see that fix for detail).
+        rand_emu(snes);              // jsr Rand
+        uint8_t r = (uint8_t)snes->cpu->a;
 
         if (r < 0xC0) {
             if (r < 0x80) {

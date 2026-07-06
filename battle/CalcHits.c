@@ -11,7 +11,17 @@ void CalcHits_c(Snes *snes) {
     if (base == 0) return;          // beq @c99e
     uint8_t rate = ram[0x38FA];
     for (uint8_t y = base; y > 0; y--) { // tay / dey / bne loop
-        uint8_t r = Rand99_emu(snes);    // jsr Rand99 (delegated)
+        // FIX (2026-07-06, KNOWN_FINDINGS.md F1): Rand99_emu is `void` --
+        // the real result lives in snes->cpu->a per SNES calling
+        // convention, NOT in a (nonexistent) C return value. The previous
+        // `uint8_t r = Rand99_emu(snes);` compiled only because this file
+        // doesn't include ff4_helpers.h (implicit-int declaration, matches
+        // the device build) and captured whatever garbage happened to be
+        // in the return-value slot -- root cause of "every physical attack
+        // misses" (a near-constant/wrong r almost always compared as >=
+        // rate). Call, then read cpu->a explicitly.
+        Rand99_emu(snes);                // jsr Rand99 (delegated)
+        uint8_t r = (uint8_t)snes->cpu->a;
         if (r < rate) {                  // cmp $38fa / bcs (inverted!)
             ram[0x38FD]++;               // inc $38fd
         }

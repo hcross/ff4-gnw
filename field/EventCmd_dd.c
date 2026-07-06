@@ -7,7 +7,14 @@ void EventCmd_dd_c(Snes *snes) {
     uint8_t *ram = snes->ram;
 
     // jsr GetNextEventByte
-    uint8_t target_event = get_next_event_byte_emu(snes);
+    // FIX (2026-07-06, KNOWN_FINDINGS.md F1): get_next_event_byte_emu is
+    // `void` -- the real result belongs in cpu->a, not a C return value
+    // (same mechanical bug as CalcHits.c's Rand99_emu call). This only
+    // corrects how the result is READ; get_next_event_byte_emu itself is
+    // still an unimplemented no-op stub, so cpu->a here is still not a
+    // real event-stream byte -- untouched, separate follow-up.
+    get_next_event_byte_emu(snes);
+    uint8_t target_event = (uint8_t)snes->cpu->a;
     ram[0x06] = target_event; // sta $06
 
     uint16_t x = 0; // ldx #0

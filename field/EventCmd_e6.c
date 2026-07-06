@@ -9,8 +9,13 @@ void EventCmd_e6_c(Snes *snes) {
     uint8_t *ram = snes->ram;
 
     // jsr GetNextEventByte
-    uint8_t event_byte = get_next_event_byte_emu(snes);
-    
+    // FIX (2026-07-06, KNOWN_FINDINGS.md F1): get_next_event_byte_emu is
+    // `void` -- the real result belongs in cpu->a, not a C return value
+    // (same fix as EventCmd_dd.c; see that file for detail). Underlying
+    // stub is still an unimplemented no-op, untouched here.
+    get_next_event_byte_emu(snes);
+    uint8_t event_byte = (uint8_t)snes->cpu->a;
+
     // sta $18, stz $19 (Input A for Mult16)
     ram[0x18] = event_byte;
     ram[0x19] = 0;

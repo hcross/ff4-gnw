@@ -13,8 +13,15 @@ void CheckTilePass_c(Snes *snes) {
     }
 
     // jsr CheckNPCBlock / cmp #$00 / bne @aa91
-    // Note: CheckNPCBlock_emu returns the value of A after RTS
-    uint16_t npc_res = CheckNPCBlock_emu(snes);
+    // FIX (2026-07-06, KNOWN_FINDINGS.md F1): CheckNPCBlock_emu is `void`
+    // -- the real result belongs in cpu->a, not a C return value (same
+    // mechanical bug as CalcHits.c's Rand99_emu call). This only corrects
+    // how the result is READ; CheckNPCBlock_emu itself is still an
+    // unimplemented no-op stub (CheckNPCBlock @ $AA:?? was never
+    // translated), so cpu->a here is still not a real NPC-block result --
+    // untouched, separate follow-up.
+    CheckNPCBlock_emu(snes);
+    uint16_t npc_res = (uint16_t)snes->cpu->a;
     if (npc_res != 0) {
         snes->cpu->a = 1;
         return;
