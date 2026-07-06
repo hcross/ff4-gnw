@@ -10,10 +10,34 @@
  * stub and its table entry are edited here directly, not generated. */
 static void ExecSound_ext_stub(Snes *snes) { (void)snes; }
 
+/* CheckMenu ($00:81F4) REMOVED from the dispatch on 2026-07-06 (204->203):
+ * same class of problem as ExecBtlGfx ($03:8085, removed 2026-06-30).
+ * CheckMenu_c's own translated body is a faithful, previously-DP-bug-fixed
+ * translation, but it calls fade_out_menu_emu / main_menu_emu (MainMenu_ext)
+ * / fade_in_menu_emu / exec_event_emu as plain C helper delegations — and
+ * MainMenu_ext is an INTERACTIVE, multi-frame routine (reads input and
+ * redraws across many real frames while the menu is open), which cannot be
+ * run synchronously inside a single dispatched C call the way a short
+ * leaf routine can (same category as WaitVblank-driven routines: running
+ * it to completion inside one dispatch hook would need real vblank/NMI
+ * progression that a synchronous call can't provide). The 4 helpers were
+ * left as permanent no-op stubs rather than attempted delegations, which
+ * meant the whole menu subsystem silently never ran in native mode: no
+ * menu ever appeared, dispatch or not (see MemPalace wing=ff4-gnw
+ * room=obstacles-and-solutions, "[CHANTIER INPUT/MENU]" for the original
+ * 2026-06-30 diagnosis, and the ReadCtrl/UpdateCtrl fix from earlier the
+ * same day as this removal for the companion navigation-side bug).
+ * Verified via the desktop headless harness's --exclude flag: excluding
+ * ONLY $0081F4 (interpreting CheckMenu, everything else stays native,
+ * including the ReadCtrl/UpdateCtrl/InitCtrl/ResetSprites fixes) is
+ * sufficient for the menu to open AND navigate correctly — confirming
+ * CheckMenu itself (not any of its siblings) is the right, minimal thing
+ * to retire. Registry: D0081F4 L1 -> RETIRED (was already carrying a
+ * known 1/200 spike divergence pre-dating this session). */
+
 const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x00808e, AfterBattle_c },  /* field */
     { 0x0080a0, FieldMain_c },  /* field */
-    { 0x0081f4, CheckMenu_c },  /* field */
     { 0x008302, UpdatePlayerSpeed_c },  /* field */
     { 0x00834e, InitMapRAM_c },  /* field */
     { 0x00883d, _00883d_c },  /* field */
