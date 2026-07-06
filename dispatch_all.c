@@ -122,6 +122,11 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x038407, Div16_c },  /* battle */
     { 0x0384e3, Add16_c },  /* battle */
     { 0x0384fc, Sub16_c },  /* battle */
+    { 0x03c99f, CalcDmg_c },  /* battle -- physical/elemental damage formula, see
+                                battle/CalcDmg.c. Was reached only via the calc_dmg_emu
+                                no-op stub before 2026-07-06 (KNOWN_FINDINGS.md F1-adjacent) --
+                                the whole damage formula (variance/mitigation/9999 cap)
+                                silently never ran. */
     { 0x038579, RandMonster_c },  /* battle */
     { 0x03858b, Rand99_c },  /* battle */
     { 0x03859b, AddMsg1_c },  /* battle */

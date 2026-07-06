@@ -46,7 +46,7 @@ __attribute__((weak)) void add_msg3_emu(Snes *snes) { (void)snes; }
 /* apply_speed_mod_emu: delegates to ApplySpeedMod_c ($03:9FD8, already dispatched). */
 void apply_speed_mod_emu(Snes *snes) { ApplySpeedMod_c(snes); }
 __attribute__((weak)) void board_whale_emu(Snes *snes) { (void)snes; }
-__attribute__((weak)) void calc_dmg_emu(Snes *snes) { (void)snes; }
+void calc_dmg_emu(Snes *snes) { CalcDmg_c(snes); } /* F1-adjacent: was no-op stub */
 __attribute__((weak)) void check_battle_list_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void check_player_move_world_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void check_strong_elem_emu(Snes *snes) { (void)snes; }
