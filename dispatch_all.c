@@ -1,14 +1,43 @@
 #include "dispatch_all.h"
 
-/* Stub for ExecSound_ext ($04:8003): the title routine ShowTitle ($00:85FA)
- * calls `jsl ExecSound_ext` as its 8th instruction; the real sound engine
- * (jsr ExecSound) spins waiting for an SPC handshake that never completes on
+/* Stub for ExecSound_ext ($04:8003, real entry point per ROM bytes is
+ * $04:8004): the title routine ShowTitle ($00:85FA) calls `jsl
+ * ExecSound_ext` as its 8th instruction; the real sound engine (jsr
+ * ExecSound) spins waiting for an SPC handshake that never completes on
  * G&W, so ShowTitle never returns and never loads the logo tilemap. No-op
  * here so the dispatch JSL hook simulates RTL and ShowTitle proceeds. This
  * silences all music/SFX (acceptable for now); the proper fix is a working
  * SPC responder. This table is hand-maintained (see dispatch_all.h) — this
- * stub and its table entry are edited here directly, not generated. */
-static void ExecSound_ext_stub(Snes *snes) { (void)snes; }
+ * stub and its table entry are edited here directly, not generated.
+ *
+ * FIX (2026-07-06): a plain no-op is not safe for every caller of this same
+ * entry point. $13:FF12-FF39 ("send a sound command and wait for the SPC
+ * to acknowledge it") does:
+ *   STA $A9          ; save command id
+ *   loop: LDA $A9 / STA $1E01 ; LDA #$01 / STA $1E00 ; JSL $048004
+ *         LDA $1E05 / CMP $A9 / BNE loop   ; wait for ack in $1E05
+ *         LDA $1E04 / CMP #$01 / BNE loop  ; wait for a second ack byte
+ *         RTL
+ * A pure no-op never updates $1E04/$1E05, so this caller spins forever --
+ * found reproducing a "combat animation ends on a black screen that never
+ * progresses" bug reported by Hoani (triggered by a random encounter near
+ * Baron castle; see MemPalace wing=ff4-gnw room=obstacles-and-solutions).
+ * The title screen's own call site (ShowTitle) never polls $1E04/$1E05, so
+ * it's unaffected by also writing them here. Fake the acknowledgment the
+ * real SPC would eventually send: mirror the command id into $1E05 and set
+ * $1E04=1, satisfying any caller using this same handshake pattern, while
+ * still not actually running any sound (same accepted trade-off as above --
+ * silence, not a real SPC responder). Zero-page ($A9) is read via cpu->dp,
+ * not assumed absolute -- same reasoning as the CheckMenu_c/InitMapRAM_c DP
+ * fixes elsewhere in this project (see CONVENTIONS.md's field-module DP
+ * note); this specific call site's real DP was not independently confirmed,
+ * so this defaults safely to whatever the caller's actual DP is. */
+static void ExecSound_ext_stub(Snes *snes) {
+    uint16_t dp = snes->cpu->dp;
+    uint8_t cmd_id = snes->ram[(uint16_t)(dp + 0xA9)];
+    snes->ram[0x1E05] = cmd_id;
+    snes->ram[0x1E04] = 0x01;
+}
 
 /* CheckMenu ($00:81F4) REMOVED from the dispatch on 2026-07-06 (204->203):
  * same class of problem as ExecBtlGfx ($03:8085, removed 2026-06-30).
