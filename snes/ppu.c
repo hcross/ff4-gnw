@@ -313,28 +313,20 @@ static inline void ppu_resetBgCache(void) {
   for(int i = 0; i < 4; i++) { s_bgTilemapAdr[i] = 0xFFFF; s_bgPlaneAdr[i] = 0xFFFF; }
 }
 
-/* Per-scanline decoded BG pixel blocks (bg-line batching fast path).
+/* Per-scanline decoded BG pixel lines (bg-line batching fast path).
  *
  * On the hot path (modes 0/1/3, no offset-per-tile, no hires), ppu_getPixel
  * used to call ppu_getPixelForBgLayer once per pixel per layer per screen
  * (main + sub when color math is on), redoing the tilemap address arithmetic
  * and per-pixel bit extraction on every call even though the span cache above
- * already held the VRAM words. Instead, decode 8-screen-pixel blocks on
- * demand (memoised per line via a 32-bit mask per layer), walking tile spans
- * (one tilemap fetch + one plane fetch per span) with the exact same address
- * math as ppu_getPixelForBgLayer. Subsequent queries -- the rest of the
- * block, the whole subscreen pass, the second priority pass -- are O(1)
+ * already held the VRAM words. Instead, decode a layer's entire 256-pixel
+ * line once, on the first query for that layer on this line, walking tile
+ * spans (one tilemap fetch + one plane fetch per span of <=8 pixels) with the
+ * exact same address math as ppu_getPixelForBgLayer. Subsequent queries --
+ * including the whole subscreen pass and the second priority pass -- are O(1)
  * lookups. Same within-one-scanline validity argument as the span cache:
  * VRAM and scroll registers are stable for the whole line (the CPU runs
  * between lines, not mid-line).
- *
- * Block-wise (not whole-line) on purpose: scenes where an opaque top layer
- * wins almost everywhere (e.g. menus) query the lower layers for only a few
- * pixels per line, and an eager 256-pixel decode of those layers measured
- * ~20% SLOWER than the per-pixel path; on-demand blocks cap that waste at
- * one 8-pixel block per touched window while keeping the dense-query win
- * (title screen with color math: every block of both layers decodes exactly
- * once, then everything is lookups).
  *
  * The fast path is gated per (mode, layer): modes 2/4/6 (offset-per-tile
  * rewrites lx/ly per pixel), modes 5/6 (hires doubles lx and differs between
@@ -345,27 +337,25 @@ static inline void ppu_resetBgCache(void) {
  * separately so both priority passes resolve from one decode. */
 static uint16_t s_bgLineVal[4][256];
 static uint8_t  s_bgLinePrio[4][256];
-static uint32_t s_bgLineDecoded[4];  // bit b = screen block [b*8, b*8+8) decoded
+static bool     s_bgLineValid[4];
 
-static void ppu_decodeBgBlock(Ppu* ppu, int layer, int y, int block) {
+static void ppu_decodeBgLine(Ppu* ppu, int layer, int y) {
   // Same address/extraction math as ppu_getPixelForBgLayer, restricted to
   // modes 0/1/3 (so wideTiles == bigTiles and tileBits/highBit are the same
   // on both axes) and to the no-mosaic case (ly is line-constant).
-  // A screen block straddles at most two tile spans when hScroll%8 != 0.
   const bool bigTiles = ppu->bgLayer[layer].bigTiles;
   const int tileBits = bigTiles ? 4 : 3;
   const int tileHighBit = bigTiles ? 0x200 : 0x100;
   const int bitDepth = bitDepthsPerMode[ppu->mode][layer];
   const int hScroll = ppu->bgLayer[layer].hScroll;
   const int ly = (y + ppu->bgLayer[layer].vScroll) & 0x3ff;
-  const int sxEnd = block * 8 + 8;
-  int sx = block * 8;
-  while(sx < sxEnd) {
+  int sx = 0;
+  while(sx < 256) {
     const int lx = (sx + hScroll) & 0x3ff;
     // Span ends at the 8-pixel tile boundary, so lx>>tileBits, lx&8 and the
     // fetched words are constant across it (no 0x3ff wrap mid-span either).
     int spanLen = 8 - (lx & 7);
-    if(spanLen > sxEnd - sx) spanLen = sxEnd - sx;
+    if(spanLen > 256 - sx) spanLen = 256 - sx;
     uint16_t tilemapAdr = ppu->bgLayer[layer].tilemapAdr + (((ly >> tileBits) & 0x1f) << 5 | ((lx >> tileBits) & 0x1f));
     if((lx & tileHighBit) && ppu->bgLayer[layer].tilemapWider) tilemapAdr += 0x400;
     if((ly & tileHighBit) && ppu->bgLayer[layer].tilemapHigher) tilemapAdr += ppu->bgLayer[layer].tilemapWider ? 0x800 : 0x400;
@@ -413,7 +403,7 @@ static void ppu_decodeBgBlock(Ppu* ppu, int layer, int y, int block) {
     }
     sx += spanLen;
   }
-  s_bgLineDecoded[layer] |= (uint32_t)1 << block;
+  s_bgLineValid[layer] = true;
 }
 
 void ppu_runLine(Ppu* ppu, int line) {
@@ -424,7 +414,7 @@ void ppu_runLine(Ppu* ppu, int line) {
   // actual line
   if(ppu->mode == 7) ppu_calculateMode7Starts(ppu, line);
   ppu_resetBgCache();
-  for(int i = 0; i < 4; i++) s_bgLineDecoded[i] = 0;
+  for(int i = 0; i < 4; i++) s_bgLineValid[i] = false;
   for(int x = 0; x < 256; x++) {
     ppu_handlePixel(ppu, x, line);
   }
@@ -527,20 +517,12 @@ static int ppu_getPixel(Ppu* ppu, int x, int y, bool sub, int* r, int* g, int* b
     if(layerActive) {
       if(curLayer < 4) {
         // bg layer
-        if(ppu->addSubscreen &&
-           (ppu->mode == 0 || ppu->mode == 1 || ppu->mode == 3) &&
+        if((ppu->mode == 0 || ppu->mode == 1 || ppu->mode == 3) &&
            !(ppu->bgLayer[curLayer].mosaicEnabled && ppu->mosaicSize > 1)) {
-          // bg-line batching fast path (see ppu_decodeBgBlock): decode this
-          // 8-pixel block on first query, then O(1) lookups for the rest of
-          // it, the subscreen pass and the other priority pass.
-          // Gated on addSubscreen: only when the subscreen composition path
-          // is live does every output pixel query the BG layers twice
-          // (main + sub), which is what makes the decoded block pay for
-          // itself. Ungated, scenes with a single query per pixel (menus)
-          // measured ~13% slower than the per-pixel path.
-          if(!(s_bgLineDecoded[curLayer] & ((uint32_t)1 << (x >> 3)))) {
-            ppu_decodeBgBlock(ppu, curLayer, y, x >> 3);
-          }
+          // bg-line batching fast path (see ppu_decodeBgLine): decode the
+          // layer's whole line on first query, then O(1) lookups for the
+          // subscreen pass and the other priority pass.
+          if(!s_bgLineValid[curLayer]) ppu_decodeBgLine(ppu, curLayer, y);
           pixel = (s_bgLinePrio[curLayer][x] != curPriority) ? 0 : s_bgLineVal[curLayer][x];
         } else {
         int lx = x;
