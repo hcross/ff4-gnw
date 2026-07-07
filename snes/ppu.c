@@ -313,6 +313,109 @@ static inline void ppu_resetBgCache(void) {
   for(int i = 0; i < 4; i++) { s_bgTilemapAdr[i] = 0xFFFF; s_bgPlaneAdr[i] = 0xFFFF; }
 }
 
+/* Per-scanline decoded BG pixel blocks (bg-line batching fast path).
+ *
+ * On the hot path (modes 0/1/3, no offset-per-tile, no hires), ppu_getPixel
+ * used to call ppu_getPixelForBgLayer once per pixel per layer per screen
+ * (main + sub when color math is on), redoing the tilemap address arithmetic
+ * and per-pixel bit extraction on every call even though the span cache above
+ * already held the VRAM words. Instead, decode 8-screen-pixel blocks on
+ * demand (memoised per line via a 32-bit mask per layer), walking tile spans
+ * (one tilemap fetch + one plane fetch per span) with the exact same address
+ * math as ppu_getPixelForBgLayer. Subsequent queries -- the rest of the
+ * block, the whole subscreen pass, the second priority pass -- are O(1)
+ * lookups. Same within-one-scanline validity argument as the span cache:
+ * VRAM and scroll registers are stable for the whole line (the CPU runs
+ * between lines, not mid-line).
+ *
+ * Block-wise (not whole-line) on purpose: scenes where an opaque top layer
+ * wins almost everywhere (e.g. menus) query the lower layers for only a few
+ * pixels per line, and an eager 256-pixel decode of those layers measured
+ * ~20% SLOWER than the per-pixel path; on-demand blocks cap that waste at
+ * one 8-pixel block per touched window while keeping the dense-query win
+ * (title screen with color math: every block of both layers decodes exactly
+ * once, then everything is lookups).
+ *
+ * The fast path is gated per (mode, layer): modes 2/4/6 (offset-per-tile
+ * rewrites lx/ly per pixel), modes 5/6 (hires doubles lx and differs between
+ * main/sub), mode 7 (own path) and active mosaic (rewrites lx AND ly per
+ * pixel) all fall back to the untouched per-pixel path below.
+ * Decoded values store exactly what ppu_getPixelForBgLayer would return for
+ * the matching-priority call (0 = transparent); the tile priority bit is kept
+ * separately so both priority passes resolve from one decode. */
+static uint16_t s_bgLineVal[4][256];
+static uint8_t  s_bgLinePrio[4][256];
+static uint32_t s_bgLineDecoded[4];  // bit b = screen block [b*8, b*8+8) decoded
+
+static void ppu_decodeBgBlock(Ppu* ppu, int layer, int y, int block) {
+  // Same address/extraction math as ppu_getPixelForBgLayer, restricted to
+  // modes 0/1/3 (so wideTiles == bigTiles and tileBits/highBit are the same
+  // on both axes) and to the no-mosaic case (ly is line-constant).
+  // A screen block straddles at most two tile spans when hScroll%8 != 0.
+  const bool bigTiles = ppu->bgLayer[layer].bigTiles;
+  const int tileBits = bigTiles ? 4 : 3;
+  const int tileHighBit = bigTiles ? 0x200 : 0x100;
+  const int bitDepth = bitDepthsPerMode[ppu->mode][layer];
+  const int hScroll = ppu->bgLayer[layer].hScroll;
+  const int ly = (y + ppu->bgLayer[layer].vScroll) & 0x3ff;
+  const int sxEnd = block * 8 + 8;
+  int sx = block * 8;
+  while(sx < sxEnd) {
+    const int lx = (sx + hScroll) & 0x3ff;
+    // Span ends at the 8-pixel tile boundary, so lx>>tileBits, lx&8 and the
+    // fetched words are constant across it (no 0x3ff wrap mid-span either).
+    int spanLen = 8 - (lx & 7);
+    if(spanLen > sxEnd - sx) spanLen = sxEnd - sx;
+    uint16_t tilemapAdr = ppu->bgLayer[layer].tilemapAdr + (((ly >> tileBits) & 0x1f) << 5 | ((lx >> tileBits) & 0x1f));
+    if((lx & tileHighBit) && ppu->bgLayer[layer].tilemapWider) tilemapAdr += 0x400;
+    if((ly & tileHighBit) && ppu->bgLayer[layer].tilemapHigher) tilemapAdr += ppu->bgLayer[layer].tilemapWider ? 0x800 : 0x400;
+    const uint16_t tile = ppu->vram[tilemapAdr & 0x7fff];
+    const uint8_t prio = (tile & 0x2000) ? 1 : 0;
+    int paletteNum = (tile & 0x1c00) >> 10;
+    const int row = (tile & 0x8000) ? 7 - (ly & 0x7) : (ly & 0x7);
+    int tileNum = tile & 0x3ff;
+    if(bigTiles) {
+      // if unflipped right/bottom half of tile, or flipped left/upper half
+      if(((bool) (lx & 8)) ^ ((bool) (tile & 0x4000))) tileNum += 1;
+      if(((bool) (ly & 8)) ^ ((bool) (tile & 0x8000))) tileNum += 0x10;
+    }
+    int paletteSize = 4;
+    if(bitDepth > 2) paletteSize = 16;
+    if(bitDepth > 4) paletteSize = 256;
+    if(ppu->mode == 0) paletteNum += 8 * layer;
+    const int paletteBase = paletteSize * paletteNum;
+    const uint16_t planeAdr = (ppu->bgLayer[layer].tileAdr + ((tileNum & 0x3ff) * 4 * bitDepth) + row) & 0x7fff;
+    const uint16_t plane1 = ppu->vram[planeAdr];
+    uint16_t plane2 = 0, plane3 = 0, plane4 = 0;
+    if(bitDepth > 2) plane2 = ppu->vram[(planeAdr + 8) & 0x7fff];
+    if(bitDepth > 4) {
+      plane3 = ppu->vram[(planeAdr + 16) & 0x7fff];
+      plane4 = ppu->vram[(planeAdr + 24) & 0x7fff];
+    }
+    const bool hFlip = (tile & 0x4000) != 0;
+    for(int i = 0; i < spanLen; i++) {
+      const int px = (lx + i) & 0x7;
+      const int col = hFlip ? px : 7 - px;
+      int pixel = (plane1 >> col) & 1;
+      pixel |= ((plane1 >> (8 + col)) & 1) << 1;
+      if(bitDepth > 2) {
+        pixel |= ((plane2 >> col) & 1) << 2;
+        pixel |= ((plane2 >> (8 + col)) & 1) << 3;
+      }
+      if(bitDepth > 4) {
+        pixel |= ((plane3 >> col) & 1) << 4;
+        pixel |= ((plane3 >> (8 + col)) & 1) << 5;
+        pixel |= ((plane4 >> col) & 1) << 6;
+        pixel |= ((plane4 >> (8 + col)) & 1) << 7;
+      }
+      s_bgLineVal[layer][sx + i] = pixel == 0 ? 0 : (uint16_t)(paletteBase + pixel);
+      s_bgLinePrio[layer][sx + i] = prio;
+    }
+    sx += spanLen;
+  }
+  s_bgLineDecoded[layer] |= (uint32_t)1 << block;
+}
+
 void ppu_runLine(Ppu* ppu, int line) {
   // called for lines 1-224/239
   // evaluate sprites
@@ -321,6 +424,7 @@ void ppu_runLine(Ppu* ppu, int line) {
   // actual line
   if(ppu->mode == 7) ppu_calculateMode7Starts(ppu, line);
   ppu_resetBgCache();
+  for(int i = 0; i < 4; i++) s_bgLineDecoded[i] = 0;
   for(int x = 0; x < 256; x++) {
     ppu_handlePixel(ppu, x, line);
   }
@@ -423,6 +527,22 @@ static int ppu_getPixel(Ppu* ppu, int x, int y, bool sub, int* r, int* g, int* b
     if(layerActive) {
       if(curLayer < 4) {
         // bg layer
+        if(ppu->addSubscreen &&
+           (ppu->mode == 0 || ppu->mode == 1 || ppu->mode == 3) &&
+           !(ppu->bgLayer[curLayer].mosaicEnabled && ppu->mosaicSize > 1)) {
+          // bg-line batching fast path (see ppu_decodeBgBlock): decode this
+          // 8-pixel block on first query, then O(1) lookups for the rest of
+          // it, the subscreen pass and the other priority pass.
+          // Gated on addSubscreen: only when the subscreen composition path
+          // is live does every output pixel query the BG layers twice
+          // (main + sub), which is what makes the decoded block pay for
+          // itself. Ungated, scenes with a single query per pixel (menus)
+          // measured ~13% slower than the per-pixel path.
+          if(!(s_bgLineDecoded[curLayer] & ((uint32_t)1 << (x >> 3)))) {
+            ppu_decodeBgBlock(ppu, curLayer, y, x >> 3);
+          }
+          pixel = (s_bgLinePrio[curLayer][x] != curPriority) ? 0 : s_bgLineVal[curLayer][x];
+        } else {
         int lx = x;
         int ly = y;
         if(ppu->bgLayer[curLayer].mosaicEnabled && ppu->mosaicSize > 1) {
@@ -450,6 +570,7 @@ static int ppu_getPixel(Ppu* ppu, int x, int y, bool sub, int* r, int* g, int* b
             curLayer, curPriority
           );
         }
+        } // end of per-pixel fallback (kept at original indentation)
       } else {
         // get a pixel from the sprite buffer
         pixel = 0;
