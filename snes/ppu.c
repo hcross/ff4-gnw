@@ -385,19 +385,24 @@ static void ppu_handlePixel(Ppu* ppu, int x, int y) {
   }
   int row = (y - 1) + (ppu->evenFrame ? 0 : 239);
 #ifdef FF4_PORT_STATIC_SNES
-  /* The G&W pixelBuffer holds only 224 rows (512*4*224). A vblank-edge race can
+  /* The G&W pixelBuffer holds only 224 rows. A vblank-edge race can
    * call ppu_runLine for line 225 (-> row 224), one row past the end, which
    * corrupts the adjacent Snes (observed clobbering snes->dma -> crash in
    * dma_handleDma when the next DMA fires). Clamp to the buffer; non-visible
    * lines must not be rendered anyway. */
   if (row < 0 || row >= 224) return;
 #endif
-  ppu->pixelBuffer[row * 2048 + x * 8 + 0 + ppu->pixelOutputFormat] = ((b2 << 3) | (b2 >> 2)) * ppu->brightness / 15;
-  ppu->pixelBuffer[row * 2048 + x * 8 + 1 + ppu->pixelOutputFormat] = ((g2 << 3) | (g2 >> 2)) * ppu->brightness / 15;
-  ppu->pixelBuffer[row * 2048 + x * 8 + 2 + ppu->pixelOutputFormat] = ((r2 << 3) | (r2 >> 2)) * ppu->brightness / 15;
+  ppu->pixelBuffer[row * PPU_PIXELBUF_STRIDE + x * PPU_PIXELBUF_XPITCH + 0 + ppu->pixelOutputFormat] = ((b2 << 3) | (b2 >> 2)) * ppu->brightness / 15;
+  ppu->pixelBuffer[row * PPU_PIXELBUF_STRIDE + x * PPU_PIXELBUF_XPITCH + 1 + ppu->pixelOutputFormat] = ((g2 << 3) | (g2 >> 2)) * ppu->brightness / 15;
+  ppu->pixelBuffer[row * PPU_PIXELBUF_STRIDE + x * PPU_PIXELBUF_XPITCH + 2 + ppu->pixelOutputFormat] = ((r2 << 3) | (r2 >> 2)) * ppu->brightness / 15;
+#ifndef FF4_PORT_STATIC_SNES
+  /* Right half of the hires pair -- dropped in the FF4 static build:
+   * outside hires it duplicates (b2,g2,r2) above, no reader ever
+   * consumed it, and it doubled the buffer (see pixelBuffer in ppu.h). */
   ppu->pixelBuffer[row * 2048 + x * 8 + 4 + ppu->pixelOutputFormat] = ((b << 3) | (b >> 2)) * ppu->brightness / 15;
   ppu->pixelBuffer[row * 2048 + x * 8 + 5 + ppu->pixelOutputFormat] = ((g << 3) | (g >> 2)) * ppu->brightness / 15;
   ppu->pixelBuffer[row * 2048 + x * 8 + 6 + ppu->pixelOutputFormat] = ((r << 3) | (r >> 2)) * ppu->brightness / 15;
+#endif
 }
 
 static int ppu_getPixel(Ppu* ppu, int x, int y, bool sub, int* r, int* g, int* b) {
@@ -1176,6 +1181,13 @@ void ppu_write(Ppu* ppu, uint8_t adr, uint8_t val) {
 }
 
 void ppu_putPixels(Ppu* ppu, uint8_t* pixels) {
+#ifdef FF4_PORT_STATIC_SNES
+  /* Dead in the FF4 port: no caller (device and desktop both read the
+   * frame through ff4_blit_to_lcd), and the stock 2048-stride / row+239
+   * indexing below no longer matches the shrunk pixelBuffer layout
+   * (see ppu.h). Kept as a stub so the upstream API surface stays. */
+  (void)ppu; (void)pixels;
+#else
   for(int y = 0; y < (ppu->frameOverscan ? 239 : 224); y++) {
     int dest = y * 2 + (ppu->frameOverscan ? 2 : 16);
     int y1 = y, y2 = y + 239;
@@ -1192,4 +1204,5 @@ void ppu_putPixels(Ppu* ppu, uint8_t* pixels) {
     memset(pixels + (2 * 2048), 0, 2048 * 14);
     memset(pixels + (464 * 2048), 0, 2048 * 16);
   }
+#endif
 }

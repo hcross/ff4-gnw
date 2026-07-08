@@ -128,18 +128,35 @@ struct Ppu {
 #ifdef FF4_PORT_STATIC_SNES
   /* G&W port: single buffer instead of even/odd double buffer, and
    * shrunk to 224 lines (SNES native height with overscan disabled).
-   * Width stays 512 because pixelBuffer is indexed with a hardcoded
-   * stride of 2048 (= 512*4) in ppu.c. Pair this with
-   * ppu_handleFrameStart forcing evenFrame=true (no row+239 offset)
-   * and ppu_runLine bounded by `frameOverscan ? 239 : 224` — FF4
-   * sets frameOverscan=false so 224 rows are sufficient. */
-  uint8_t pixelBuffer[512 * 4 * 224];
+   * Width halved to 256 single 4-byte pixels per row: the stock layout
+   * stores a hires PAIR (8 bytes) per SNES column, but outside modes
+   * 5/6/pseudo-hires both halves carry the same color and every reader
+   * in this port (ff4_blit_to_lcd; ppu_putPixels is dead here) only
+   * ever reads the left half. FF4 never uses hires, so the right half
+   * was 229 KB of dead writes in the overlay's tightest RAM region.
+   * Pair this with ppu_handleFrameStart forcing evenFrame=true (no
+   * row+239 offset) and ppu_runLine bounded by
+   * `frameOverscan ? 239 : 224` — FF4 sets frameOverscan=false so 224
+   * rows are sufficient. Indexing goes through PPU_PIXELBUF_STRIDE /
+   * PPU_PIXELBUF_XPITCH (ppu.c, main.c) — keep them in sync. */
+  uint8_t pixelBuffer[256 * 4 * 224];
 #else
   // times 2 for even and odd frame
   uint8_t pixelBuffer[512 * 4 * 239 * 2];
 #endif
   uint8_t pixelOutputFormat;
 };
+
+/* Row stride and per-SNES-column pitch of pixelBuffer (see the field's
+ * comment). The FF4 static build stores one 4-byte pixel per column;
+ * stock LakeSnes stores a hires pair of two. */
+#ifdef FF4_PORT_STATIC_SNES
+#define PPU_PIXELBUF_STRIDE 1024
+#define PPU_PIXELBUF_XPITCH 4
+#else
+#define PPU_PIXELBUF_STRIDE 2048
+#define PPU_PIXELBUF_XPITCH 8
+#endif
 
 enum { ppu_pixelOutputFormatXBGR = 0, ppu_pixelOutputFormatBGRX = 1 };
 
