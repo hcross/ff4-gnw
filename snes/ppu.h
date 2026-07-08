@@ -160,6 +160,13 @@ struct Ppu {
 
 enum { ppu_pixelOutputFormatXBGR = 0, ppu_pixelOutputFormatBGRX = 1 };
 
+/* Frameskip hook (see ppu_runLine): when 0, sprite evaluation still runs
+ * (the range/time-over flags read back at $213E are game-visible state)
+ * but the per-pixel render loop is skipped -- pixelBuffer simply keeps
+ * the last rendered frame. Emulation-visible state is unaffected by
+ * construction: the pixel loop only writes pixelBuffer. Default 1. */
+extern int ff4_ppu_render_enabled;
+
 Ppu* ppu_init(Snes* snes);
 void ppu_free(Ppu* ppu);
 void ppu_reset(Ppu* ppu);
