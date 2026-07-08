@@ -406,11 +406,17 @@ static void ppu_decodeBgLine(Ppu* ppu, int layer, int y) {
   s_bgLineValid[layer] = true;
 }
 
+int ff4_ppu_render_enabled = 1;
+
 void ppu_runLine(Ppu* ppu, int line) {
   // called for lines 1-224/239
   // evaluate sprites
   memset(ppu->objPixelBuffer, 0, sizeof(ppu->objPixelBuffer));
   if(!ppu->forcedBlank) ppu_evaluateSprites(ppu, line - 1);
+  /* Frameskip (see ppu.h): sprite evaluation above stays -- its
+   * range/time-over flags are game-visible via $213E -- but everything
+   * below only feeds pixelBuffer, so a skipped frame bails out here. */
+  if(!ff4_ppu_render_enabled) return;
   // actual line
   if(ppu->mode == 7) ppu_calculateMode7Starts(ppu, line);
   ppu_resetBgCache();
