@@ -315,6 +315,255 @@ static inline void ppu_resetBgCache(void) {
 
 int ff4_ppu_render_enabled = 1;
 
+/* ==================== M1: per-line compositor ====================
+ *
+ * Line renderer for the hot modes (0/1/3, no OPT/hires/mosaic/interlace):
+ * replaces the 256x ppu_handlePixel -> ppu_getPixel(main[+sub]) ->
+ * layer-priority-loop -> function-call-per-pixel-per-layer pipeline with
+ * three per-line stages:
+ *   1. decode each active BG layer's full line into index+priority arrays
+ *      (exact ppu_getPixelForBgLayer address/extraction math);
+ *   2. compose the main (and, when color math needs it, sub) screen line
+ *      by PAINTING layer entries in REVERSE priority order (lowest first,
+ *      opaque pixels overwrite) -- same final pixel as the original
+ *      first-opaque-wins walk, but array ops instead of calls;
+ *   3. resolve CGRAM/direct color, clip window, color math and brightness
+ *      per pixel from the composed lines, reproducing ppu_handlePixel's
+ *      arithmetic exactly, and write the (halved) pixelBuffer.
+ * Every excluded configuration (mode 7's own path, modes 2/4/6 OPT,
+ * 5/6 hires, active mosaic, interlace, pseudo-hires) falls back to the
+ * untouched per-pixel path below.
+ *
+ * Motivation: measured on the G&W (D6 probe, title screen, 2026-07-09)
+ * the render step costs 186 ms of a 254 ms frame. The per-pixel pipeline's
+ * cost is calls + re-derived addressing per pixel per layer per screen;
+ * this compositor does that work once per line per layer. */
+
+static uint16_t s_lrVal[4][256];     // decoded BG line: CGRAM index (0 = transparent)
+static uint8_t  s_lrPrio[4][256];    // decoded BG line: tile priority bit
+static uint16_t s_lrPix[2][256];     // composed pixel index   [0]=main [1]=sub
+static uint8_t  s_lrLayer[2][256];   // composed layer id (5 = backdrop, 6 = no-math sprite)
+static uint8_t  s_lrWin[6][256];     // window membership per window-layer, this line
+
+static void ppu_lrDecodeBgLine(Ppu* ppu, int layer, int y) {
+  // Same address/extraction math as ppu_getPixelForBgLayer, restricted to
+  // modes 0/1/3 (wideTiles == bigTiles, same tileBits/highBit both axes),
+  // no mosaic (ly is line-constant).
+  const bool bigTiles = ppu->bgLayer[layer].bigTiles;
+  const int tileBits = bigTiles ? 4 : 3;
+  const int tileHighBit = bigTiles ? 0x200 : 0x100;
+  const int bitDepth = bitDepthsPerMode[ppu->mode][layer];
+  const int hScroll = ppu->bgLayer[layer].hScroll;
+  const int ly = (y + ppu->bgLayer[layer].vScroll) & 0x3ff;
+  int sx = 0;
+  while(sx < 256) {
+    const int lx = (sx + hScroll) & 0x3ff;
+    int spanLen = 8 - (lx & 7);           // span ends at the tile boundary
+    if(spanLen > 256 - sx) spanLen = 256 - sx;
+    uint16_t tilemapAdr = ppu->bgLayer[layer].tilemapAdr + (((ly >> tileBits) & 0x1f) << 5 | ((lx >> tileBits) & 0x1f));
+    if((lx & tileHighBit) && ppu->bgLayer[layer].tilemapWider) tilemapAdr += 0x400;
+    if((ly & tileHighBit) && ppu->bgLayer[layer].tilemapHigher) tilemapAdr += ppu->bgLayer[layer].tilemapWider ? 0x800 : 0x400;
+    const uint16_t tile = ppu->vram[tilemapAdr & 0x7fff];
+    const uint8_t prio = (tile & 0x2000) ? 1 : 0;
+    int paletteNum = (tile & 0x1c00) >> 10;
+    const int row = (tile & 0x8000) ? 7 - (ly & 0x7) : (ly & 0x7);
+    int tileNum = tile & 0x3ff;
+    if(bigTiles) {
+      if(((bool) (lx & 8)) ^ ((bool) (tile & 0x4000))) tileNum += 1;
+      if(((bool) (ly & 8)) ^ ((bool) (tile & 0x8000))) tileNum += 0x10;
+    }
+    int paletteSize = 4;
+    if(bitDepth > 2) paletteSize = 16;
+    if(bitDepth > 4) paletteSize = 256;
+    if(ppu->mode == 0) paletteNum += 8 * layer;
+    const int paletteBase = paletteSize * paletteNum;
+    const uint16_t planeAdr = (ppu->bgLayer[layer].tileAdr + ((tileNum & 0x3ff) * 4 * bitDepth) + row) & 0x7fff;
+    const uint16_t plane1 = ppu->vram[planeAdr];
+    uint16_t plane2 = 0, plane3 = 0, plane4 = 0;
+    if(bitDepth > 2) plane2 = ppu->vram[(planeAdr + 8) & 0x7fff];
+    if(bitDepth > 4) {
+      plane3 = ppu->vram[(planeAdr + 16) & 0x7fff];
+      plane4 = ppu->vram[(planeAdr + 24) & 0x7fff];
+    }
+    const bool hFlip = (tile & 0x4000) != 0;
+    for(int i = 0; i < spanLen; i++) {
+      const int px = (lx + i) & 0x7;
+      const int col = hFlip ? px : 7 - px;
+      int pixel = (plane1 >> col) & 1;
+      pixel |= ((plane1 >> (8 + col)) & 1) << 1;
+      if(bitDepth > 2) {
+        pixel |= ((plane2 >> col) & 1) << 2;
+        pixel |= ((plane2 >> (8 + col)) & 1) << 3;
+      }
+      if(bitDepth > 4) {
+        pixel |= ((plane3 >> col) & 1) << 4;
+        pixel |= ((plane3 >> (8 + col)) & 1) << 5;
+        pixel |= ((plane4 >> col) & 1) << 6;
+        pixel |= ((plane4 >> (8 + col)) & 1) << 7;
+      }
+      s_lrVal[layer][sx + i] = pixel == 0 ? 0 : (uint16_t)(paletteBase + pixel);
+      s_lrPrio[layer][sx + i] = prio;
+    }
+    sx += spanLen;
+  }
+}
+
+static void ppu_lrComposeLine(Ppu* ppu, int actMode, bool sub, const bool *bgDecoded) {
+  uint16_t *outPix   = s_lrPix[sub ? 1 : 0];
+  uint8_t  *outLayer = s_lrLayer[sub ? 1 : 0];
+  memset(outPix, 0, 256 * sizeof(uint16_t));
+  memset(outLayer, 5, 256);                       // backdrop
+  for(int i = layerCountPerMode[actMode] - 1; i >= 0; i--) {
+    const int curLayer = layersPerMode[actMode][i];
+    const int curPriority = prioritysPerMode[actMode][i];
+    const bool enabled = sub ? ppu->layer[curLayer].subScreenEnabled
+                             : ppu->layer[curLayer].mainScreenEnabled;
+    if(!enabled) continue;
+    const bool windowed = sub ? ppu->layer[curLayer].subScreenWindowed
+                              : ppu->layer[curLayer].mainScreenWindowed;
+    const uint8_t *win = windowed ? s_lrWin[curLayer] : NULL;   // win[x] -> masked off
+    if(curLayer < 4) {
+      if(!bgDecoded[curLayer]) continue;
+      const uint16_t *val  = s_lrVal[curLayer];
+      const uint8_t  *prio = s_lrPrio[curLayer];
+      for(int x = 0; x < 256; x++) {
+        if(win && win[x]) continue;
+        if(prio[x] != curPriority) continue;
+        const uint16_t v = val[x];
+        if(v) { outPix[x] = v; outLayer[x] = (uint8_t)curLayer; }
+      }
+    } else {
+      for(int x = 0; x < 256; x++) {
+        if(win && win[x]) continue;
+        if(ppu->objPriorityBuffer[x] != curPriority) continue;
+        const uint8_t v = ppu->objPixelBuffer[x];
+        // sprites with palette color < 0xc0 are exempt from color math (id 6)
+        if(v) { outPix[x] = v; outLayer[x] = (v < 0xc0) ? 6 : 4; }
+      }
+    }
+  }
+}
+
+static void ppu_lrRunLine(Ppu* ppu, int y) {
+  const int row = y - 1;                          // evenFrame path (see ppu_lrFastPathOk)
+#ifdef FF4_PORT_STATIC_SNES
+  if(row < 0 || row >= 224) return;               // same clamp as ppu_handlePixel (F9)
+#endif
+  uint8_t *out = &ppu->pixelBuffer[row * PPU_PIXELBUF_STRIDE];
+  if(ppu->forcedBlank) {                          // original writes a zero line
+    memset(out, 0, 256 * PPU_PIXELBUF_XPITCH);
+    return;
+  }
+  const int actMode = (ppu->mode == 1 && ppu->bg3priority) ? 8 : ppu->mode;
+
+  // window membership per window-layer (cheap when both windows disabled)
+  for(int l = 0; l < 6; l++) {
+    if(!ppu->windowLayer[l].window1enabled && !ppu->windowLayer[l].window2enabled) {
+      memset(s_lrWin[l], 0, 256);
+    } else {
+      for(int x = 0; x < 256; x++) s_lrWin[l][x] = ppu_getWindowState(ppu, l, x) ? 1 : 0;
+    }
+  }
+
+  // decode each BG layer used by either screen
+  bool bgDecoded[4] = {false, false, false, false};
+  for(int i = 0; i < layerCountPerMode[actMode]; i++) {
+    const int l = layersPerMode[actMode][i];
+    if(l >= 4 || bgDecoded[l]) continue;
+    if(ppu->layer[l].mainScreenEnabled || ppu->layer[l].subScreenEnabled) {
+      ppu_lrDecodeBgLine(ppu, l, y);
+      bgDecoded[l] = true;
+    }
+  }
+
+  ppu_lrComposeLine(ppu, actMode, false, bgDecoded);
+  const bool mathAny = ppu->mathEnabled[0] || ppu->mathEnabled[1] || ppu->mathEnabled[2]
+                    || ppu->mathEnabled[3] || ppu->mathEnabled[4] || ppu->mathEnabled[5];
+  const bool needSub = ppu->addSubscreen && mathAny;
+  if(needSub) ppu_lrComposeLine(ppu, actMode, true, bgDecoded);
+
+  for(int x = 0; x < 256; x++) {
+    const int pixel = s_lrPix[0][x];
+    const int layer = s_lrLayer[0][x];
+    int r, g, b;
+    if(ppu->directColor && layer < 4 && bitDepthsPerMode[actMode][layer] == 8) {
+      r = ((pixel & 0x7) << 2) | ((pixel & 0x100) >> 7);
+      g = ((pixel & 0x38) >> 1) | ((pixel & 0x200) >> 8);
+      b = ((pixel & 0xc0) >> 3) | ((pixel & 0x400) >> 8);
+    } else {
+      const uint16_t color = ppu->cgram[pixel & 0xff];
+      r = color & 0x1f;
+      g = (color >> 5) & 0x1f;
+      b = (color >> 10) & 0x1f;
+    }
+    const bool colorWindowState = s_lrWin[5][x] != 0;
+    if(ppu->clipMode == 3 ||
+       (ppu->clipMode == 2 && colorWindowState) ||
+       (ppu->clipMode == 1 && !colorWindowState)) {
+      r = 0; g = 0; b = 0;
+    }
+    int secondLayer = 5;
+    const bool mathEnabled = layer < 6 && ppu->mathEnabled[layer] && !(
+      ppu->preventMathMode == 3 ||
+      (ppu->preventMathMode == 2 && colorWindowState) ||
+      (ppu->preventMathMode == 1 && !colorWindowState)
+    );
+    int r2 = 0, g2 = 0, b2 = 0;
+    if(mathEnabled && ppu->addSubscreen) {
+      const int spix = s_lrPix[1][x];
+      const int slayer = s_lrLayer[1][x];
+      secondLayer = (slayer == 6) ? 4 : slayer;   // math only tests != 5
+      if(ppu->directColor && slayer < 4 && bitDepthsPerMode[actMode][slayer] == 8) {
+        r2 = ((spix & 0x7) << 2) | ((spix & 0x100) >> 7);
+        g2 = ((spix & 0x38) >> 1) | ((spix & 0x200) >> 8);
+        b2 = ((spix & 0xc0) >> 3) | ((spix & 0x400) >> 8);
+      } else {
+        const uint16_t c2 = ppu->cgram[spix & 0xff];
+        r2 = c2 & 0x1f;
+        g2 = (c2 >> 5) & 0x1f;
+        b2 = (c2 >> 10) & 0x1f;
+      }
+    }
+    if(mathEnabled) {
+      if(ppu->subtractColor) {
+        r -= (ppu->addSubscreen && secondLayer != 5) ? r2 : ppu->fixedColorR;
+        g -= (ppu->addSubscreen && secondLayer != 5) ? g2 : ppu->fixedColorG;
+        b -= (ppu->addSubscreen && secondLayer != 5) ? b2 : ppu->fixedColorB;
+      } else {
+        r += (ppu->addSubscreen && secondLayer != 5) ? r2 : ppu->fixedColorR;
+        g += (ppu->addSubscreen && secondLayer != 5) ? g2 : ppu->fixedColorG;
+        b += (ppu->addSubscreen && secondLayer != 5) ? b2 : ppu->fixedColorB;
+      }
+      if(ppu->halfColor && (secondLayer != 5 || !ppu->addSubscreen)) {
+        r >>= 1; g >>= 1; b >>= 1;
+      }
+      if(r > 31) r = 31;
+      if(g > 31) g = 31;
+      if(b > 31) b = 31;
+      if(r < 0) r = 0;
+      if(g < 0) g = 0;
+      if(b < 0) b = 0;
+    }
+    uint8_t *px = out + x * PPU_PIXELBUF_XPITCH + ppu->pixelOutputFormat;
+    px[0] = (uint8_t)(((b << 3) | (b >> 2)) * ppu->brightness / 15);
+    px[1] = (uint8_t)(((g << 3) | (g >> 2)) * ppu->brightness / 15);
+    px[2] = (uint8_t)(((r << 3) | (r >> 2)) * ppu->brightness / 15);
+  }
+}
+
+static bool ppu_lrFastPathOk(Ppu* ppu) {
+  if(ppu->mode != 0 && ppu->mode != 1 && ppu->mode != 3) return false;
+  if(ppu->pseudoHires || ppu->interlace) return false;
+  if(ppu->mosaicSize > 1) {
+    for(int l = 0; l < 4; l++)
+      if(ppu->bgLayer[l].mosaicEnabled) return false;
+  }
+#ifndef FF4_PORT_STATIC_SNES
+  if(!ppu->evenFrame) return false;               // odd-frame row offset not handled
+#endif
+  return true;
+}
+
 void ppu_runLine(Ppu* ppu, int line) {
   // called for lines 1-224/239
   // evaluate sprites
@@ -324,6 +573,10 @@ void ppu_runLine(Ppu* ppu, int line) {
    * range/time-over flags are game-visible via $213E -- but everything
    * below only feeds pixelBuffer, so a skipped frame bails out here. */
   if(!ff4_ppu_render_enabled) return;
+  if(ppu_lrFastPathOk(ppu)) {
+    ppu_lrRunLine(ppu, line);
+    return;
+  }
   // actual line
   if(ppu->mode == 7) ppu_calculateMode7Starts(ppu, line);
   ppu_resetBgCache();
