@@ -341,6 +341,8 @@ int ff4_ppu_render_enabled = 1;
 
 static uint16_t s_lrVal[4][256];     // decoded BG line: CGRAM index (0 = transparent)
 static uint8_t  s_lrPrio[4][256];    // decoded BG line: tile priority bit
+static uint8_t  s_lrHasPrio[4][2];   // any opaque pixel at prio 0/1 on this line?
+static bool     s_lrSpritesAny;      // any sprite pixel on this line?
 static uint16_t s_lrPix[2][256];     // composed pixel index   [0]=main [1]=sub
 static uint8_t  s_lrLayer[2][256];   // composed layer id (5 = backdrop, 6 = no-math sprite)
 static uint8_t  s_lrWin[6][256];     // window membership per window-layer, this line
@@ -403,6 +405,7 @@ static void ppu_lrDecodeBgLine(Ppu* ppu, int layer, int y) {
       }
       s_lrVal[layer][sx + i] = pixel == 0 ? 0 : (uint16_t)(paletteBase + pixel);
       s_lrPrio[layer][sx + i] = prio;
+      if(pixel != 0) s_lrHasPrio[layer][prio] = 1;
     }
     sx += spanLen;
   }
@@ -424,6 +427,7 @@ static void ppu_lrComposeLine(Ppu* ppu, int actMode, bool sub, const bool *bgDec
     const uint8_t *win = windowed ? s_lrWin[curLayer] : NULL;   // win[x] -> masked off
     if(curLayer < 4) {
       if(!bgDecoded[curLayer]) continue;
+      if(!s_lrHasPrio[curLayer][curPriority]) continue;   // no opaque pixel at this prio
       const uint16_t *val  = s_lrVal[curLayer];
       const uint8_t  *prio = s_lrPrio[curLayer];
       for(int x = 0; x < 256; x++) {
@@ -433,6 +437,7 @@ static void ppu_lrComposeLine(Ppu* ppu, int actMode, bool sub, const bool *bgDec
         if(v) { outPix[x] = v; outLayer[x] = (uint8_t)curLayer; }
       }
     } else {
+      if(!s_lrSpritesAny) continue;                       // sprite-free line
       for(int x = 0; x < 256; x++) {
         if(win && win[x]) continue;
         if(ppu->objPriorityBuffer[x] != curPriority) continue;
@@ -471,9 +476,20 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
     const int l = layersPerMode[actMode][i];
     if(l >= 4 || bgDecoded[l]) continue;
     if(ppu->layer[l].mainScreenEnabled || ppu->layer[l].subScreenEnabled) {
+      s_lrHasPrio[l][0] = s_lrHasPrio[l][1] = 0;
       ppu_lrDecodeBgLine(ppu, l, y);
       bgDecoded[l] = true;
     }
+  }
+  s_lrSpritesAny = false;
+  for(int x = 0; x < 256; x++) {
+    if(ppu->objPixelBuffer[x]) { s_lrSpritesAny = true; break; }
+  }
+
+  // brightness LUT: 5-bit channel -> scaled 8-bit, one build per line
+  uint8_t bright[32];
+  for(int c = 0; c < 32; c++) {
+    bright[c] = (uint8_t)((((c << 3) | (c >> 2)) * ppu->brightness) / 15);
   }
 
   ppu_lrComposeLine(ppu, actMode, false, bgDecoded);
@@ -545,9 +561,9 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
       if(b < 0) b = 0;
     }
     uint8_t *px = out + x * PPU_PIXELBUF_XPITCH + ppu->pixelOutputFormat;
-    px[0] = (uint8_t)(((b << 3) | (b >> 2)) * ppu->brightness / 15);
-    px[1] = (uint8_t)(((g << 3) | (g >> 2)) * ppu->brightness / 15);
-    px[2] = (uint8_t)(((r << 3) | (r >> 2)) * ppu->brightness / 15);
+    px[0] = bright[b];
+    px[1] = bright[g];
+    px[2] = bright[r];
   }
 }
 
