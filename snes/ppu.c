@@ -345,7 +345,7 @@ int ff4_ppu_render_enabled = 1;
  * so these hot intermediates otherwise pay bus latency per access. All of
  * them are fully written before being read on every rendered line, so the
  * NOLOAD (non-zeroed) placement is safe. Desktop builds keep plain BSS. */
-#ifdef STM32H7B0
+#ifdef STM32H7B0xx
 #define FF4_LR_SCRATCH __attribute__((section(".ff4_dtcm")))
 #else
 #define FF4_LR_SCRATCH
