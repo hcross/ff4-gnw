@@ -339,13 +339,24 @@ int ff4_ppu_render_enabled = 1;
  * cost is calls + re-derived addressing per pixel per layer per screen;
  * this compositor does that work once per line per layer. */
 
-static uint16_t s_lrVal[4][256];     // decoded BG line: CGRAM index (0 = transparent)
-static uint8_t  s_lrPrio[4][256];    // decoded BG line: tile priority bit
-static uint8_t  s_lrHasPrio[4][2];   // any opaque pixel at prio 0/1 on this line?
-static bool     s_lrSpritesAny;      // any sprite pixel on this line?
-static uint16_t s_lrPix[2][256];     // composed pixel index   [0]=main [1]=sub
-static uint8_t  s_lrLayer[2][256];   // composed layer id (5 = backdrop, 6 = no-math sprite)
-static uint8_t  s_lrWin[6][256];     // window membership per window-layer, this line
+/* On the G&W, pin the compositor's per-line scratch into zero-wait-state
+ * DTCM: the ff4 overlay's .bss lives in AXI SRAM behind a 16 KB D-cache
+ * that the frame loop (VRAM + WRAM + pixelBuffer traffic) keeps evicting,
+ * so these hot intermediates otherwise pay bus latency per access. All of
+ * them are fully written before being read on every rendered line, so the
+ * NOLOAD (non-zeroed) placement is safe. Desktop builds keep plain BSS. */
+#ifdef STM32H7B0
+#define FF4_LR_SCRATCH __attribute__((section(".ff4_dtcm")))
+#else
+#define FF4_LR_SCRATCH
+#endif
+static FF4_LR_SCRATCH uint16_t s_lrVal[4][256];     // decoded BG line: CGRAM index (0 = transparent)
+static FF4_LR_SCRATCH uint8_t  s_lrPrio[4][256];    // decoded BG line: tile priority bit
+static FF4_LR_SCRATCH uint8_t  s_lrHasPrio[4][2];   // any opaque pixel at prio 0/1 on this line?
+static FF4_LR_SCRATCH bool     s_lrSpritesAny;      // any sprite pixel on this line?
+static FF4_LR_SCRATCH uint16_t s_lrPix[2][256];     // composed pixel index   [0]=main [1]=sub
+static FF4_LR_SCRATCH uint8_t  s_lrLayer[2][256];   // composed layer id (5 = backdrop, 6 = no-math sprite)
+static FF4_LR_SCRATCH uint8_t  s_lrWin[6][256];     // window membership per window-layer, this line
 
 static void ppu_lrDecodeBgLine(Ppu* ppu, int layer, int y) {
   // Same address/extraction math as ppu_getPixelForBgLayer, restricted to
