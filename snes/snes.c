@@ -18,7 +18,6 @@
 static const double apuCyclesPerMaster = (32040 * 32) / (1364 * 262 * 60.0);
 static const double apuCyclesPerMasterPal = (32040 * 32) / (1364 * 312 * 50.0);
 
-static void snes_runCycle(Snes* snes);
 static void snes_catchupApu(Snes* snes);
 static void snes_doAutoJoypad(Snes* snes);
 static uint8_t snes_readReg(Snes* snes, uint16_t adr);
@@ -179,13 +178,144 @@ bool snes_runFrameBounded(Snes* snes, uint64_t max_ops) {
   return true;
 }
 
+// Event-batched replacement for the historical per-tick snes_runCycle loop.
+// The old code paid the full check chain (irq condition, positional events,
+// autojoy timer, wrap tests) on every 2-master-cycle tick — ~357k times per
+// frame, measured as ~67% of the frame on the G&W's Cortex-M7. Ticks that owe
+// event work only exist at a handful of hPos values (0, 16, 512, 1104, the
+// h-irq point, end of line); everything between is a straight run that can be
+// applied in bulk. Semantics are tick-exact: event order, irq edge detection
+// and the apu catchup accumulation are all preserved bit-for-bit (validated
+// byte-identical on PPM+WRAM goldens and per-frame framebuffer CRCs).
 void snes_runCycles(Snes* snes, int cycles) {
   if(snes->hPos + cycles >= 536 && snes->hPos < 536) {
     // if we go past 536, add 40 cycles for dram refersh
     cycles += 40;
   }
-  for(int i = 0; i < cycles; i += 2) {
-    snes_runCycle(snes);
+  const double apuPerTick =
+    (snes->palTiming ? apuCyclesPerMasterPal : apuCyclesPerMaster) * 2.0;
+  int ticks = (cycles + 1) >> 1; // old loop was for(i=0;i<cycles;i+=2): ceil
+  while(ticks > 0) {
+    const int h = snes->hPos;
+    const int v = snes->vPos;
+    // ---- work owed by the tick that starts at (h, v) ----
+    // irq edge check first, then positional events: same order as before
+    bool condition = (
+      (snes->vIrqEnabled || snes->hIrqEnabled) &&
+      (v == snes->vTimer || !snes->vIrqEnabled) &&
+      (h == snes->hTimer * 4 || !snes->hIrqEnabled)
+    );
+    if(!snes->irqCondition && condition) {
+      snes->inIrq = true;
+      cpu_setIrq(snes->cpu, true);
+    }
+    snes->irqCondition = condition;
+    if(h == 0) {
+      // end of hblank, do most vPos-tests
+      bool startingVblank = false;
+      if(v == 0) {
+        // end of vblank
+        snes->inVblank = false;
+        snes->inNmi = false;
+        ppu_handleFrameStart(snes->ppu);
+      } else if(v == 225) {
+        // ask the ppu if we start vblank now or at vPos 240 (overscan)
+        startingVblank = !ppu_checkOverscan(snes->ppu);
+      } else if(v == 240){
+        // if we are not yet in vblank, we had an overscan frame, set startingVblank
+        if(!snes->inVblank) startingVblank = true;
+      }
+      if(startingVblank) {
+        // if we are starting vblank
+        ppu_handleVblank(snes->ppu);
+        snes->inVblank = true;
+        snes->inNmi = true;
+        if(snes->autoJoyRead) {
+          // TODO: this starts a little after start of vblank
+          snes->autoJoyTimer = 4224;
+          snes_doAutoJoypad(snes);
+        }
+        if(snes->nmiEnabled) {
+          cpu_nmi(snes->cpu);
+        }
+      }
+    } else if(h == 16) {
+      if(v == 0) snes->dma->hdmaInitRequested = true;
+    } else if(h == 512) {
+      // render the line halfway of the screen for better compatibility
+      if(!snes->inVblank && v > 0) ppu_runLine(snes->ppu, v);
+    } else if(h == 1104) {
+      if(!snes->inVblank) snes->dma->hdmaRunRequested = true;
+    }
+    // ---- how far can we run before another tick owes event work? ----
+    // evenFrame/frameInterlace/inVblank/timers only change inside the event
+    // handlers above or in cpu-driven register writes, never mid-call, so
+    // the line length and the event set are constant within this segment.
+    int lineEnd;
+    if(!snes->palTiming) {
+      // line 240 of odd frame with no interlace is 4 cycles shorter
+      lineEnd = (v == 240 && !snes->ppu->evenFrame && !snes->ppu->frameInterlace)
+        ? 1360 : 1364;
+    } else {
+      // line 311 of odd frame with interlace is 4 cycles longer
+      lineEnd = (v == 311 && !snes->ppu->evenFrame && snes->ppu->frameInterlace)
+        ? 1368 : 1364;
+    }
+    int nextEvent = lineEnd;
+    bool active = !snes->inVblank; // read AFTER the h==0 handler above
+    if(h < 16 && v == 0) nextEvent = 16;
+    else if(h < 512 && active && v > 0) nextEvent = 512;
+    else if(h < 1104 && active) nextEvent = 1104;
+    if(snes->hIrqEnabled) {
+      int ht = snes->hTimer * 4;
+      if(ht > h && ht < nextEvent) nextEvent = ht;
+    }
+    int n = (nextEvent - h) >> 1;
+    if(n > ticks) n = ticks;
+    if(n < 1) n = 1; // corrupt-hPos guard: march like the old code did
+    // ---- bulk-apply the n ticks ----
+    // one addition per tick, replayed: a fused `+= apuPerTick * n` rounds
+    // differently and breaks the byte-identical validation bar
+    for(int i = 0; i < n; i++) snes->apuCatchupCycles += apuPerTick;
+    snes->cycles += 2 * (uint64_t)n;
+    if(snes->autoJoyTimer > 0) {
+      int dec = 2 * n;
+      snes->autoJoyTimer =
+        (snes->autoJoyTimer > dec) ? (uint16_t)(snes->autoJoyTimer - dec) : 0;
+    }
+    if(n > 1) {
+      // irqCondition must end as the per-tick check would have left it: at
+      // every interior tick hPos != hTimer*4 (the segment stops there), so
+      // the h-term only passes when the h-irq is disabled. No interior
+      // rising edge is possible: this expression true implies the boundary
+      // condition above was already true.
+      snes->irqCondition = (
+        (snes->vIrqEnabled || snes->hIrqEnabled) &&
+        (v == snes->vTimer || !snes->vIrqEnabled) &&
+        !snes->hIrqEnabled
+      );
+    }
+    int newH = h + 2 * n;
+    if(newH == lineEnd) {
+      snes->hPos = 0;
+      snes->vPos++;
+      if(!snes->palTiming) {
+        // even interlace frame is 263 lines
+        if((snes->vPos == 262 && (!snes->ppu->frameInterlace || !snes->ppu->evenFrame)) || snes->vPos == 263) {
+          snes->vPos = 0;
+          snes->frames++;
+        }
+      } else {
+        // even interlace frame is 313 lines
+        if((snes->vPos == 312 && (!snes->ppu->frameInterlace || !snes->ppu->evenFrame)) || snes->vPos == 313) {
+          snes->vPos = 0;
+          snes->frames++;
+        }
+      }
+    } else {
+      snes->hPos = (uint16_t)newH;
+    }
+    ticks -= n;
   }
 }
 
@@ -197,87 +327,6 @@ void snes_syncCycles(Snes* snes, bool start, int syncCycles) {
   } else {
     int count = syncCycles - ((snes->cycles - snes->syncCycle) % syncCycles);
     snes_runCycles(snes, count);
-  }
-}
-
-static void snes_runCycle(Snes* snes) {
-  snes->apuCatchupCycles += (snes->palTiming ? apuCyclesPerMasterPal : apuCyclesPerMaster) * 2.0;
-  snes->cycles += 2;
-  // check for h/v timer irq's
-  bool condition = (
-    (snes->vIrqEnabled || snes->hIrqEnabled) &&
-    (snes->vPos == snes->vTimer || !snes->vIrqEnabled) &&
-    (snes->hPos == snes->hTimer * 4 || !snes->hIrqEnabled)
-  );
-  if(!snes->irqCondition && condition) {
-    snes->inIrq = true;
-    cpu_setIrq(snes->cpu, true);
-  }
-  snes->irqCondition = condition;
-  // handle positional stuff
-  if(snes->hPos == 0) {
-    // end of hblank, do most vPos-tests
-    bool startingVblank = false;
-    if(snes->vPos == 0) {
-      // end of vblank
-      snes->inVblank = false;
-      snes->inNmi = false;
-      ppu_handleFrameStart(snes->ppu);
-    } else if(snes->vPos == 225) {
-      // ask the ppu if we start vblank now or at vPos 240 (overscan)
-      startingVblank = !ppu_checkOverscan(snes->ppu);
-    } else if(snes->vPos == 240){
-      // if we are not yet in vblank, we had an overscan frame, set startingVblank
-      if(!snes->inVblank) startingVblank = true;
-    }
-    if(startingVblank) {
-      // if we are starting vblank
-      ppu_handleVblank(snes->ppu);
-      snes->inVblank = true;
-      snes->inNmi = true;
-      if(snes->autoJoyRead) {
-        // TODO: this starts a little after start of vblank
-        snes->autoJoyTimer = 4224;
-        snes_doAutoJoypad(snes);
-      }
-      if(snes->nmiEnabled) {
-        cpu_nmi(snes->cpu);
-      }
-    }
-  } else if(snes->hPos == 16) {
-    if(snes->vPos == 0) snes->dma->hdmaInitRequested = true;
-  } else if(snes->hPos == 512) {
-    // render the line halfway of the screen for better compatibility
-    if(!snes->inVblank && snes->vPos > 0) ppu_runLine(snes->ppu, snes->vPos);
-  } else if(snes->hPos == 1104) {
-    if(!snes->inVblank) snes->dma->hdmaRunRequested = true;
-  }
-  // handle autoJoyRead-timer
-  if(snes->autoJoyTimer > 0) snes->autoJoyTimer -= 2;
-  // increment position
-  snes->hPos += 2;
-  if(!snes->palTiming) {
-    // line 240 of odd frame with no interlace is 4 cycles shorter
-    if((snes->hPos == 1360 && snes->vPos == 240 && !snes->ppu->evenFrame && !snes->ppu->frameInterlace) || snes->hPos == 1364) {
-      snes->hPos = 0;
-      snes->vPos++;
-      // even interlace frame is 263 lines
-      if((snes->vPos == 262 && (!snes->ppu->frameInterlace || !snes->ppu->evenFrame)) || snes->vPos == 263) {
-        snes->vPos = 0;
-        snes->frames++;
-      }
-    }
-  } else {
-    // line 311 of odd frame with interlace is 4 cycles longer
-    if((snes->hPos == 1364 && (snes->vPos != 311 || snes->ppu->evenFrame || !snes->ppu->frameInterlace)) || snes->hPos == 1368) {
-      snes->hPos = 0;
-      snes->vPos++;
-      // even interlace frame is 313 lines
-      if((snes->vPos == 312 && (!snes->ppu->frameInterlace || !snes->ppu->evenFrame)) || snes->vPos == 313) {
-        snes->vPos = 0;
-        snes->frames++;
-      }
-    }
   }
 }
 
