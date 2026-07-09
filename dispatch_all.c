@@ -96,7 +96,21 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x01d718, FadeIn_c },  /* field */
     { 0x01dfd2, LoadBattleSpeedPosText_c },  /* menu */
     /* bank $02 — combat graphics (btlgfx) primitives */
-    { 0x028560, Mult8_btlgfx_c },         /* btlgfx — 8x8 shift-add multiply */
+    /* 0x028560 Mult8_btlgfx — RETIRED from dispatch (2026-07-09). Root cause
+     * of the transient battle-menu tilemap corruption (sky tiles in the menu
+     * window for one frame, 16/600 frames on 006-in-combat): with this entry
+     * excluded the artifact drops to 0/600 (automated white-band detector on
+     * per-frame PPM dumps; git-bisect pinned the introducing commit as the
+     * monster-sprite cluster, then runtime --exclude isolation converged on
+     * this single routine). Three faithful-looking fixes were tried and
+     * REFUTED before retiring: write-results-before-cycle-charge, dropping
+     * the cycle charge, and DP-relative zp addressing -- all still 16/600.
+     * The C body's arithmetic passes its fuzzed spike, so the divergence is
+     * an interaction beyond the routine's own contract (006's documented
+     * frame-0 oracle divergence is the standing lead). Same pattern as the
+     * ExecBtlGfx/CheckMenu retirements: interpreted until requalified.
+     * Perf cost: negligible (11-opcode 8-bit multiply). See MemPalace
+     * obstacles-and-solutions 2026-07-09 for the full investigation. */
     { 0x0285d2, HardMult_btlgfx_c },      /* btlgfx — hardware 8x8 multiply ($4202/$4216) */
     { 0x0290a0, TfrBG2MenuTile_c },          /* btlgfx — BG2 menu tile DMA (atomic Mult8+read, race fix) */
     { 0x02a491, IncrTextPtr_c },           /* btlgfx — increment 16-bit text ptr at $30 */
