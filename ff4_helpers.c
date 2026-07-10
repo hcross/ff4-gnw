@@ -64,7 +64,9 @@ __attribute__((weak)) void exec_sound_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void fade_out_song_slow_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void get_monster_with_status_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void get_next_event_byte_emu(Snes *snes) { (void)snes; }
-__attribute__((weak)) void get_tile_prop_emu(Snes *snes) { (void)snes; }
+/* get_tile_prop_emu removed 2026-07-11: its sole caller (UpdateLocalTiles_c)
+ * now calls the native GetTileProps_c ($00:9FC2) directly. The weak no-op it
+ * used to be here silently disabled the tile lookups on device. */
 /* get_timer_ptr_emu: executes GetTimerPtr ($03:8569) in the interpreter.
  * Computes $3598:$3599 = $3530:$3531 + A (timer-array base + offset). */
 void get_timer_ptr_emu(Snes *snes) { run_emulated_func(snes, 0x038569u); }

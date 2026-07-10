@@ -71,6 +71,9 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x00834e, InitMapRAM_c },  /* field */
     { 0x00883d, _00883d_c },  /* field */
     { 0x00885e, _00885e_c },  /* field */
+    { 0x009f6e, UpdateLocalTiles_c },  /* field — five local tile-property slots; real entry (5 JSR sites),
+                                          replaces the retired 0x1e9f6c (rewritten bank + off-by-2: $1E:9F6C
+                                          is data, never a call target — its old L2 evidence was vacuous) */
     { 0x009fc2, GetTileProps_c },  /* field — map tile properties; entry is $9FC2 not $9FC0 (disasm off-by-2, 4th instance) */
     { 0x00aa58, CheckTilePass_c },  /* field */
     { 0x00aad8, SetPlayerNPCMap_c },  /* field */
@@ -311,7 +314,6 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x16f922, _00f922_c },  /* field */
     { 0x16fb93, TfrBG2Tilemap_c },  /* field */
     { 0x16ffab, DecodeBG1Tilemap_c },  /* field */
-    { 0x1e9f6c, UpdateLocalTiles_c },  /* field */
     { 0x1ea03e, BoardChoco_c },  /* field */
 };
 
