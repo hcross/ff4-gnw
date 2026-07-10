@@ -309,6 +309,7 @@ static uint32_t ppu_computeRenderSig(Ppu* ppu) {
   h = ppu_fnv(h, &ppu->objInterlace, sizeof(uint8_t));
   h = ppu_fnv(h, ppu->bgLayer, sizeof(ppu->bgLayer));
   h = ppu_fnv(h, &ppu->mosaicSize, sizeof(ppu->mosaicSize));
+  h = ppu_fnv(h, &ppu->mosaicStartLine, sizeof(ppu->mosaicStartLine)); // ly base for mosaic
   h = ppu_fnv(h, ppu->layer, sizeof(ppu->layer));
   h = ppu_fnv(h, ppu->m7matrix, sizeof(ppu->m7matrix));
   h = ppu_fnv(h, &ppu->m7largeField, 5); // m7largeField/charFill/xFlip/yFlip/extBg bools
@@ -507,7 +508,14 @@ static void ppu_lrDecodeBgLine(Ppu* ppu, int layer, int y) {
   const int tileHighBit = bigTiles ? 0x200 : 0x100;
   const int bitDepth = bitDepthsPerMode[ppu->mode][layer];
   const int hScroll = ppu->bgLayer[layer].hScroll;
-  const int ly = (y + ppu->bgLayer[layer].vScroll) & 0x3ff;
+  // mosaic: the source row is the block's base row -- same expression as
+  // the legacy path (ppu_handlePixel), applied BEFORE the scroll add so the
+  // signed-% behaviour matches exactly
+  int yEff = y;
+  const int mosSize = (ppu->bgLayer[layer].mosaicEnabled && ppu->mosaicSize > 1)
+    ? ppu->mosaicSize : 1;
+  if(mosSize > 1) yEff -= (yEff - ppu->mosaicStartLine) % mosSize;
+  const int ly = (yEff + ppu->bgLayer[layer].vScroll) & 0x3ff;
   int sx = 0;
   while(sx < 256) {
     const int lx = (sx + hScroll) & 0x3ff;
@@ -583,6 +591,19 @@ static void ppu_lrDecodeBgLine(Ppu* ppu, int layer, int y) {
     }
     if(hasPrio) s_lrHasPrio[layer][prio] = 1;
     sx += spanLen;
+  }
+  if(mosSize > 1) {
+    // horizontal mosaic: every pixel shows its block's base pixel. The
+    // legacy path fetches (x - x%size) + hScroll; the loop above decoded
+    // exactly those base positions, so replication is a straight copy
+    // (ascending x reads an already-final base slot).
+    uint16_t *val = s_lrVal[layer];
+    uint8_t  *prio = s_lrPrio[layer];
+    for(int x = 0; x < 256; x++) {
+      const int bx = x - (x % mosSize);
+      val[x] = val[bx];
+      prio[x] = prio[bx];
+    }
   }
 }
 
@@ -875,10 +896,10 @@ static void ppu_lrPaletteLine(Ppu* ppu, int y) {
 static bool ppu_lrFastPathOk(Ppu* ppu) {
   if(ppu->mode != 0 && ppu->mode != 1 && ppu->mode != 3) return false;
   if(ppu->pseudoHires || ppu->interlace) return false;
-  if(ppu->mosaicSize > 1) {
-    for(int l = 0; l < 4; l++)
-      if(ppu->bgLayer[l].mosaicEnabled) return false;
-  }
+  // mosaic is line-renderer-friendly (base row + horizontal block
+  // replication in the decoder) and handled since 2026-07-10 -- it used to
+  // force these scenes (battle-entry pixelation, teleports) onto the legacy
+  // per-pixel path, which is why the transitions crawled on device.
 #ifndef FF4_PORT_STATIC_SNES
   if(!ppu->evenFrame) return false;               // odd-frame row offset not handled
 #endif
