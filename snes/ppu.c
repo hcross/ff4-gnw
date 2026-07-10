@@ -488,7 +488,12 @@ static void ppu_lrRefreshPal3(Ppu* ppu, const uint8_t bright[32]) {
 // mapped, 4096 slots; a collision or a gen miss just re-decodes (still
 // byte-identical). File-scope singleton — FF4_PORT_STATIC_SNES contract,
 // like the E2 access maps.
-#define LR_TRC_SLOTS 4096
+// 2048 slots (was 4096): halved 2026-07-10 to make room for the R5 line
+// store alongside the FF4_LOAD_SAVESTATE boot path (the combination was
+// 2,676 bytes over the RAM_EMU budget; this frees 32 KB). Collisions only
+// cost a re-decode -- correctness is invariant -- and the measured impact
+// on the field/title D6 is within noise (see the release table).
+#define LR_TRC_SLOTS 2048
 static uint8_t  s_trcRaw[LR_TRC_SLOTS][8];
 static uint32_t s_trcKey[LR_TRC_SLOTS];   // (planeAdr << 4) | bitDepth
 static uint32_t s_trcGen[LR_TRC_SLOTS];
