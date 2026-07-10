@@ -108,7 +108,8 @@ void ppu_reset(Ppu* ppu) {
   ppu->vramReadBuffer = 0;
   memset(ppu->cgram, 0, sizeof(ppu->cgram));
   ppu->cgramGen++; // invalidate palette caches keyed on cgram content
-  ppu->skipHaveBaseline = false; ppu->skipRasterWrite = false; ppu->skipFrame = false; // R4
+  ppu->skipHaveBaseline = false; ppu->skipRasterWrite = false; ppu->skipMode = 0; // R4
+  ppu->psValid = false; ppu->psStoring = false; // R5
   ppu->cgramPointer = 0;
   ppu->cgramSecondWrite = false;
   ppu->cgramBuffer = 0;
@@ -259,7 +260,7 @@ void ppu_handleState(Ppu* ppu, StateHandler* sh) {
   sh_handleByteArray(sh, ppu->highOam, 0x20);
   sh_handleByteArray(sh, ppu->objPixelBuffer, 256);
   sh_handleByteArray(sh, ppu->objPriorityBuffer, 256);
-  if(!sh->saving) { ppu->cgramGen++; ppu->vramGen++; ppu->skipHaveBaseline = false; } // loaded gfx: invalidate caches + force a render
+  if(!sh->saving) { ppu->cgramGen++; ppu->vramGen++; ppu->skipHaveBaseline = false; ppu->psValid = false; ppu->psStoring = false; } // loaded gfx: invalidate caches + force a render
 }
 
 bool ppu_checkOverscan(Ppu* ppu) {
@@ -269,6 +270,7 @@ bool ppu_checkOverscan(Ppu* ppu) {
 }
 
 void ppu_handleVblank(Ppu* ppu) {
+  if(ppu->psStoring) { ppu->psValid = true; ppu->psStoring = false; }
   // called either right after ppu_checkOverscan at (0,225), or at (0,240)
   if(!ppu->forcedBlank) {
     ppu->oamAdr = ppu->oamAdrWritten;
@@ -343,27 +345,40 @@ void ppu_handleFrameStart(Ppu* ppu) {
 #else
   ppu->evenFrame = !ppu->evenFrame;
 #endif
-  // R4 dirty-frame skip decision for the frame that starts now. Skip only
-  // when every render input matches the last rendered frame AND nothing
-  // could have altered pixels mid-frame: no visible-line ppu_write last
-  // frame, and no HDMA channel armed (HDMA drives per-line raster effects
-  // through ppu_write, and the frame it first arms would otherwise slip
-  // through this start-of-frame signature).
+  // R4/R5 skip decision, gated on geometry stability (no visible-line
+  // ppu_write last frame, no HDMA armed). mode 1 = whole-frame identical;
+  // mode 2 = geometry identical to the line store but cgram moved (replay
+  // only the output stage).
   {
     const uint32_t sig = ppu_computeRenderSig(ppu);
     const bool prevFrameRaster = ppu->skipRasterWrite;
     ppu->skipRasterWrite = false;
-    const bool canSkip = ppu->skipHaveBaseline && !prevFrameRaster
-      && !snes_anyHdmaActive(ppu->snes)
-      && sig == ppu->skipSig
-      && ppu->vramGen == ppu->skipVramGen
-      && ppu->cgramGen == ppu->skipCgramGen;
-    ppu->skipFrame = canSkip;
-    if(!canSkip) {
+    const bool geomStable = !prevFrameRaster && !snes_anyHdmaActive(ppu->snes);
+    ppu->skipMode = 0;
+    if(geomStable && ppu->skipHaveBaseline
+       && sig == ppu->skipSig
+       && ppu->vramGen == ppu->skipVramGen
+       && ppu->cgramGen == ppu->skipCgramGen) {
+      ppu->skipMode = 1;
+      ppu->psStoring = false;
+    } else if(geomStable && ppu->psValid
+              && sig == ppu->psSig
+              && ppu->vramGen == ppu->psVramGen) {
+      ppu->skipMode = 2;
+      ppu->psStoring = false;
       ppu->skipSig = sig;
       ppu->skipVramGen = ppu->vramGen;
       ppu->skipCgramGen = ppu->cgramGen;
       ppu->skipHaveBaseline = true;
+    } else {
+      ppu->skipSig = sig;
+      ppu->skipVramGen = ppu->vramGen;
+      ppu->skipCgramGen = ppu->cgramGen;
+      ppu->skipHaveBaseline = true;
+      ppu->psStoring = true;
+      ppu->psValid = false;
+      ppu->psSig = sig;
+      ppu->psVramGen = ppu->vramGen;
     }
   }
 }
@@ -439,6 +454,29 @@ static FF4_LR_SCRATCH uint8_t  s_lrPal3[256][3];
 static bool     s_lrPal3Valid;
 static uint32_t s_lrPal3Gen;
 static uint8_t  s_lrPal3Bright;
+
+// R5 palette-only skip line store (see ppu.h). ~143 KB of overlay BSS.
+#define PS_LINES 224
+static uint8_t s_psPix[PS_LINES][256];
+static uint8_t s_psSub[PS_LINES][256];
+static uint8_t s_psFlg[PS_LINES][128];
+#define PS_F_CLIP 1u
+#define PS_F_MATH 2u
+#define PS_F_SUBV 4u
+
+static void ppu_lrRefreshPal3(Ppu* ppu, const uint8_t bright[32]) {
+  if(s_lrPal3Valid && s_lrPal3Gen == ppu->cgramGen && s_lrPal3Bright == ppu->brightness)
+    return;
+  for(int c = 0; c < 256; c++) {
+    const uint16_t col = ppu->cgram[c];
+    s_lrPal3[c][0] = bright[(col >> 10) & 0x1f];
+    s_lrPal3[c][1] = bright[(col >> 5) & 0x1f];
+    s_lrPal3[c][2] = bright[col & 0x1f];
+  }
+  s_lrPal3Valid = true;
+  s_lrPal3Gen = ppu->cgramGen;
+  s_lrPal3Bright = ppu->brightness;
+}
 
 // R2b: decoded-tile-row cache. Keyed on (planeAdr, bitDepth) — the VRAM
 // word address of a tile's row and its bit depth fully determine the eight
@@ -604,6 +642,7 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
 #endif
   uint8_t *out = &ppu->pixelBuffer[row * PPU_PIXELBUF_STRIDE];
   if(ppu->forcedBlank) {                          // original writes a zero line
+    ppu->psStoring = false;
     memset(out, 0, 256 * PPU_PIXELBUF_XPITCH);
     return;
   }
@@ -663,20 +702,8 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
   const bool needSub = ppu->addSubscreen && mathAny;
   if(needSub) ppu_lrComposeLine(ppu, actMode, true, bgDecoded);
 
-  // R2a: refresh the final palette when cgram or brightness moved; the
-  // entries are exactly bright[] applied to the cgram channels, so a pal3
-  // copy is byte-identical to the historical per-pixel chain
-  if(!s_lrPal3Valid || s_lrPal3Gen != ppu->cgramGen || s_lrPal3Bright != ppu->brightness) {
-    for(int c = 0; c < 256; c++) {
-      const uint16_t col = ppu->cgram[c];
-      s_lrPal3[c][0] = bright[(col >> 10) & 0x1f]; // b
-      s_lrPal3[c][1] = bright[(col >> 5) & 0x1f];  // g
-      s_lrPal3[c][2] = bright[col & 0x1f];         // r
-    }
-    s_lrPal3Valid = true;
-    s_lrPal3Gen = ppu->cgramGen;
-    s_lrPal3Bright = ppu->brightness;
-  }
+  // R2a: final palette cache (now via the shared helper, reused by R5)
+  ppu_lrRefreshPal3(ppu, bright);
   // direct color can only engage on a mode with an 8bpp layer
   bool dcPossible = false;
   if(ppu->directColor) {
@@ -686,22 +713,28 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
     }
   }
 
+  if(ppu->psStoring && dcPossible) ppu->psStoring = false;
+  const bool psStore = ppu->psStoring;
+
   if(!mathAny && ppu->clipMode == 0 && !dcPossible) {
-    // no pixel on this line can clip, blend or use direct color: the whole
-    // output stage collapses to palette copies
+    uint8_t *psp = psStore ? s_psPix[row] : NULL;
     for(int x = 0; x < 256; x++) {
-      const uint8_t* c3 = s_lrPal3[s_lrPix[0][x] & 0xff];
+      const uint8_t pi = (uint8_t)s_lrPix[0][x];
+      if(psp) psp[x] = pi;
+      const uint8_t* c3 = s_lrPal3[pi];
       uint8_t *px = out + x * PPU_PIXELBUF_XPITCH + ppu->pixelOutputFormat;
       px[0] = c3[0];
       px[1] = c3[1];
       px[2] = c3[2];
     }
+    if(psStore) memset(s_psFlg[row], 0, 128);
     return;
   }
 
   // (measured on device: a per-pixel palette shortcut inside this loop
   // COSTS 4 ms/frame on math-heavy lines — the duplicated tests outweigh
   // the savings; only the whole-line fast path above survives)
+  uint8_t psFlagPend = 0;
   for(int x = 0; x < 256; x++) {
     const int pixel = s_lrPix[0][x];
     const int layer = s_lrLayer[0][x];
@@ -717,9 +750,10 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
       b = (color >> 10) & 0x1f;
     }
     const bool colorWindowState = s_lrWin[5][x] != 0;
-    if(ppu->clipMode == 3 ||
+    const bool psClipped = ppu->clipMode == 3 ||
        (ppu->clipMode == 2 && colorWindowState) ||
-       (ppu->clipMode == 1 && !colorWindowState)) {
+       (ppu->clipMode == 1 && !colorWindowState);
+    if(psClipped) {
       r = 0; g = 0; b = 0;
     }
     int secondLayer = 5;
@@ -728,6 +762,18 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
       (ppu->preventMathMode == 2 && colorWindowState) ||
       (ppu->preventMathMode == 1 && !colorWindowState)
     );
+    if(psStore) {
+      uint8_t f = (psClipped ? PS_F_CLIP : 0) | (mathEnabled ? PS_F_MATH : 0);
+      uint8_t sp = 0;
+      if(mathEnabled && ppu->addSubscreen) {
+        const int sly = s_lrLayer[1][x];
+        if(((sly == 6) ? 4 : sly) != 5) { f |= PS_F_SUBV; sp = (uint8_t)s_lrPix[1][x]; }
+      }
+      s_psPix[row][x] = (uint8_t)pixel;
+      s_psSub[row][x] = sp;
+      if((x & 1) == 0) psFlagPend = f;
+      else s_psFlg[row][x >> 1] = (uint8_t)(psFlagPend | (f << 4));
+    }
     int r2 = 0, g2 = 0, b2 = 0;
     if(mathEnabled && ppu->addSubscreen) {
       const int spix = s_lrPix[1][x];
@@ -771,6 +817,56 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
   }
 }
 
+static void ppu_lrPaletteLine(Ppu* ppu, int y) {
+  const int row = y - 1;
+  if(row < 0 || row >= PS_LINES) return;
+  uint8_t *out = &ppu->pixelBuffer[row * PPU_PIXELBUF_STRIDE];
+  uint8_t bright[32];
+  for(int c = 0; c < 32; c++) {
+    bright[c] = (uint8_t)((((c << 3) | (c >> 2)) * ppu->brightness) / 15);
+  }
+  ppu_lrRefreshPal3(ppu, bright);
+  const uint8_t *pixL = s_psPix[row];
+  const uint8_t *subL = s_psSub[row];
+  const uint8_t *flgL = s_psFlg[row];
+  for(int x = 0; x < 256; x++) {
+    const uint8_t f = (uint8_t)((flgL[x >> 1] >> ((x & 1) ? 4 : 0)) & 0x7);
+    uint8_t *px = out + x * PPU_PIXELBUF_XPITCH + ppu->pixelOutputFormat;
+    if(f == 0) {
+      const uint8_t *c3 = s_lrPal3[pixL[x]];
+      px[0] = c3[0]; px[1] = c3[1]; px[2] = c3[2];
+      continue;
+    }
+    int r, g, b;
+    if(f & PS_F_CLIP) { r = 0; g = 0; b = 0; }
+    else {
+      const uint16_t color = ppu->cgram[pixL[x]];
+      r = color & 0x1f; g = (color >> 5) & 0x1f; b = (color >> 10) & 0x1f;
+    }
+    if(f & PS_F_MATH) {
+      const bool subv = (f & PS_F_SUBV) != 0;
+      int r2 = 0, g2 = 0, b2 = 0;
+      if(subv) {
+        const uint16_t c2 = ppu->cgram[subL[x]];
+        r2 = c2 & 0x1f; g2 = (c2 >> 5) & 0x1f; b2 = (c2 >> 10) & 0x1f;
+      }
+      if(ppu->subtractColor) {
+        r -= subv ? r2 : ppu->fixedColorR;
+        g -= subv ? g2 : ppu->fixedColorG;
+        b -= subv ? b2 : ppu->fixedColorB;
+      } else {
+        r += subv ? r2 : ppu->fixedColorR;
+        g += subv ? g2 : ppu->fixedColorG;
+        b += subv ? b2 : ppu->fixedColorB;
+      }
+      if(ppu->halfColor && (subv || !ppu->addSubscreen)) { r >>= 1; g >>= 1; b >>= 1; }
+      if(r > 31) r = 31; if(g > 31) g = 31; if(b > 31) b = 31;
+      if(r < 0) r = 0; if(g < 0) g = 0; if(b < 0) b = 0;
+    }
+    px[0] = bright[b]; px[1] = bright[g]; px[2] = bright[r];
+  }
+}
+
 static bool ppu_lrFastPathOk(Ppu* ppu) {
   if(ppu->mode != 0 && ppu->mode != 1 && ppu->mode != 3) return false;
   if(ppu->pseudoHires || ppu->interlace) return false;
@@ -792,12 +888,14 @@ void ppu_runLine(Ppu* ppu, int line) {
   /* Frameskip (see ppu.h): sprite evaluation above stays -- its
    * range/time-over flags are game-visible via $213E -- but everything
    * below only feeds pixelBuffer, so a skipped frame bails out here. */
-  if(!ff4_ppu_render_enabled) return;
-  if(ppu->skipFrame) return;   // R4: render inputs unchanged since last frame
+  if(!ff4_ppu_render_enabled) { ppu->psStoring = false; return; }
+  if(ppu->skipMode == 1) return;
+  if(ppu->skipMode == 2) { ppu_lrPaletteLine(ppu, line); return; }
   if(ppu_lrFastPathOk(ppu)) {
     ppu_lrRunLine(ppu, line);
     return;
   }
+  ppu->psStoring = false;   // legacy-path lines are not stored
   // actual line
   if(ppu->mode == 7) ppu_calculateMode7Starts(ppu, line);
   ppu_resetBgCache();
@@ -1376,7 +1474,12 @@ void ppu_write(Ppu* ppu, uint8_t adr, uint8_t val) {
   // R4: a PPU write on a visible scanline can change pixels mid-frame
   // (raster effect); such a frame is not summarized by its start-of-frame
   // signature, so bar the next frame from skipping against it.
-  { const uint16_t vp = ppu->snes->vPos; if(vp >= 1 && vp <= 224) ppu->skipRasterWrite = true; }
+  { const uint16_t vp = ppu->snes->vPos;
+    if(vp >= 1 && vp <= 224) {
+      ppu->skipRasterWrite = true;
+      if(ppu->skipMode) { ppu->skipMode = 0; ppu->psValid = false; }
+      ppu->psStoring = false;
+    } }
   switch(adr) {
     case 0x00: {
       // TODO: oam address reset when written on first line of vblank, (and when forced blank is disabled?)

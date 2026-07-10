@@ -139,7 +139,13 @@ struct Ppu {
   uint32_t skipSig, skipVramGen, skipCgramGen;
   bool skipHaveBaseline;   // a frame has been rendered since reset/load
   bool skipRasterWrite;    // a ppu_write landed on a visible line this frame
-  bool skipFrame;          // decision for the frame currently being scanned
+  uint8_t skipMode;        // 0=full render, 1=whole-frame skip, 2=palette-only (R5)
+  // R5 palette-only skip: when ONLY cgram changed since the last complete
+  // stored render (geometry identical), decode+compose are reused from the
+  // line store and only the output stage re-runs. Derived, never serialized.
+  uint32_t psSig, psVramGen;  // signature/vram gen the line store was built at
+  bool psValid;               // a complete line store exists for psSig
+  bool psStoring;             // this full render is storing every line
   // pixel buffer (xbgr)
 #ifdef FF4_PORT_STATIC_SNES
   /* G&W port: single buffer instead of even/odd double buffer, and
