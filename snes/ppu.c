@@ -573,31 +573,12 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
     return;
   }
 
+  // (measured on device: a per-pixel palette shortcut inside this loop
+  // COSTS 4 ms/frame on math-heavy lines — the duplicated tests outweigh
+  // the savings; only the whole-line fast path above survives)
   for(int x = 0; x < 256; x++) {
     const int pixel = s_lrPix[0][x];
     const int layer = s_lrLayer[0][x];
-    {
-      // R2a shortcut: same three tests the body below performs, hoisted —
-      // a pixel that neither clips, blends, nor uses direct color is a
-      // straight palette copy
-      const bool dcPix = dcPossible && layer < 4 && bitDepthsPerMode[actMode][layer] == 8;
-      const bool cws = s_lrWin[5][x] != 0;
-      const bool clipped = ppu->clipMode == 3 ||
-        (ppu->clipMode == 2 && cws) || (ppu->clipMode == 1 && !cws);
-      const bool math = layer < 6 && ppu->mathEnabled[layer] && !(
-        ppu->preventMathMode == 3 ||
-        (ppu->preventMathMode == 2 && cws) ||
-        (ppu->preventMathMode == 1 && !cws)
-      );
-      if(!dcPix && !clipped && !math) {
-        const uint8_t* c3 = s_lrPal3[pixel & 0xff];
-        uint8_t *px = out + x * PPU_PIXELBUF_XPITCH + ppu->pixelOutputFormat;
-        px[0] = c3[0];
-        px[1] = c3[1];
-        px[2] = c3[2];
-        continue;
-      }
-    }
     int r, g, b;
     if(ppu->directColor && layer < 4 && bitDepthsPerMode[actMode][layer] == 8) {
       r = ((pixel & 0x7) << 2) | ((pixel & 0x100) >> 7);
