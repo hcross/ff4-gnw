@@ -472,12 +472,29 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
   }
   const int actMode = (ppu->mode == 1 && ppu->bg3priority) ? 8 : ppu->mode;
 
-  // window membership per window-layer (cheap when both windows disabled)
+  // window membership per window-layer (cheap when both windows disabled).
+  // Membership is piecewise-constant in x: whatever the enable/invert/mask
+  // combination, it can only change value at a window edge. Evaluate
+  // ppu_getWindowState once per span and memset, instead of once per pixel
+  // (measured at 34% of the whole render on the M7, R1).
+  int winBp[6] = {0, ppu->window1left, ppu->window1right + 1,
+                  ppu->window2left, ppu->window2right + 1, 256};
+  for(int i = 1; i < 6; i++) {           // insertion sort, 6 entries
+    int v = winBp[i], j = i;
+    while(j > 0 && winBp[j-1] > v) { winBp[j] = winBp[j-1]; j--; }
+    winBp[j] = v;
+  }
   for(int l = 0; l < 6; l++) {
     if(!ppu->windowLayer[l].window1enabled && !ppu->windowLayer[l].window2enabled) {
       memset(s_lrWin[l], 0, 256);
     } else {
-      for(int x = 0; x < 256; x++) s_lrWin[l][x] = ppu_getWindowState(ppu, l, x) ? 1 : 0;
+      for(int i = 0; i < 5; i++) {
+        const int s = winBp[i];
+        int e = winBp[i + 1];
+        if(e > 256) e = 256;
+        if(s >= e) continue;             // duplicate/out-of-range breakpoint
+        memset(&s_lrWin[l][s], ppu_getWindowState(ppu, l, s) ? 1 : 0, e - s);
+      }
     }
   }
 
