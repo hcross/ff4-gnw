@@ -78,6 +78,9 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x00be47, CalcVehicleSpritePos_c },  /* field */
     { 0x00bdb2, CalcObjScreenPos_c },  /* field — on-screen object position; entry is $BDB2 not $BDB0 (disasm off-by-2) */
     { 0x00c0c4, PlayerSpriteTiles_c },  /* field */
+    { 0x00c2ff, ClearNpcMapCell_c },  /* field — npc-map cell clear; cluster entries verified against ROM bytes */
+    { 0x00c347, SetNpcMapCell_c },  /* field — npc-map cell set ($AE|$80) */
+    { 0x00c357, SetNpcMapPtr_c },  /* field — npc-map index into $3D/$3E; real entry is $C357 not the annotated $C355 (off-by-2) */
     { 0x00c3bd, UpdateWhalePal_c },  /* field */
     { 0x00cb5f, TfrBGAnimGfx_c },  /* field */
     { 0x00f535, UpdateBG2ScrollSkip_c },  /* field — bank $00's real (sole) entry point; loads
