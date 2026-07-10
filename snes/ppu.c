@@ -450,13 +450,25 @@ static void ppu_lrDecodeBgLine(Ppu* ppu, int layer, int y) {
       s_trcKey[trcSlot] = trcKey;
     }
     const bool hFlip = (tile & 0x4000) != 0;
-    for(int i = 0; i < spanLen; i++) {
-      const int px = (lx + i) & 0x7;
-      const int pixel = raw[hFlip ? px : 7 - px];
-      s_lrVal[layer][sx + i] = pixel == 0 ? 0 : (uint16_t)(paletteBase + pixel);
-      s_lrPrio[layer][sx + i] = prio;
-      if(pixel != 0) s_lrHasPrio[layer][prio] = 1;
+    uint16_t *ov = &s_lrVal[layer][sx];
+    uint8_t  *op = &s_lrPrio[layer][sx];
+    int hasPrio = 0;
+    if(hFlip) {
+      for(int i = 0; i < spanLen; i++) {
+        const int pixel = raw[(lx + i) & 0x7];
+        ov[i] = pixel == 0 ? 0 : (uint16_t)(paletteBase + pixel);
+        op[i] = (uint8_t)prio;
+        hasPrio |= pixel;
+      }
+    } else {
+      for(int i = 0; i < spanLen; i++) {
+        const int pixel = raw[7 - ((lx + i) & 0x7)];
+        ov[i] = pixel == 0 ? 0 : (uint16_t)(paletteBase + pixel);
+        op[i] = (uint8_t)prio;
+        hasPrio |= pixel;
+      }
     }
+    if(hasPrio) s_lrHasPrio[layer][prio] = 1;
     sx += spanLen;
   }
 }
@@ -480,20 +492,36 @@ static void ppu_lrComposeLine(Ppu* ppu, int actMode, bool sub, const bool *bgDec
       if(!s_lrHasPrio[curLayer][curPriority]) continue;   // no opaque pixel at this prio
       const uint16_t *val  = s_lrVal[curLayer];
       const uint8_t  *prio = s_lrPrio[curLayer];
-      for(int x = 0; x < 256; x++) {
-        if(win && win[x]) continue;
-        if(prio[x] != curPriority) continue;
-        const uint16_t v = val[x];
-        if(v) { outPix[x] = v; outLayer[x] = (uint8_t)curLayer; }
+      if(win) {
+        for(int x = 0; x < 256; x++) {
+          if(win[x] || prio[x] != curPriority) continue;
+          const uint16_t v = val[x];
+          if(v) { outPix[x] = v; outLayer[x] = (uint8_t)curLayer; }
+        }
+      } else {
+        for(int x = 0; x < 256; x++) {
+          if(prio[x] != curPriority) continue;
+          const uint16_t v = val[x];
+          if(v) { outPix[x] = v; outLayer[x] = (uint8_t)curLayer; }
+        }
       }
     } else {
       if(!s_lrSpritesAny) continue;                       // sprite-free line
-      for(int x = 0; x < 256; x++) {
-        if(win && win[x]) continue;
-        if(ppu->objPriorityBuffer[x] != curPriority) continue;
-        const uint8_t v = ppu->objPixelBuffer[x];
-        // sprites with palette color < 0xc0 are exempt from color math (id 6)
-        if(v) { outPix[x] = v; outLayer[x] = (v < 0xc0) ? 6 : 4; }
+      const uint8_t *obp = ppu->objPriorityBuffer;
+      const uint8_t *obx = ppu->objPixelBuffer;
+      if(win) {
+        for(int x = 0; x < 256; x++) {
+          if(win[x] || obp[x] != curPriority) continue;
+          const uint8_t v = obx[x];
+          // sprites with palette color < 0xc0 are exempt from color math (id 6)
+          if(v) { outPix[x] = v; outLayer[x] = (v < 0xc0) ? 6 : 4; }
+        }
+      } else {
+        for(int x = 0; x < 256; x++) {
+          if(obp[x] != curPriority) continue;
+          const uint8_t v = obx[x];
+          if(v) { outPix[x] = v; outLayer[x] = (v < 0xc0) ? 6 : 4; }
+        }
       }
     }
   }
