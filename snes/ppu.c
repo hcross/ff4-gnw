@@ -106,6 +106,7 @@ void ppu_reset(Ppu* ppu) {
   ppu->vramRemapMode = 0;
   ppu->vramReadBuffer = 0;
   memset(ppu->cgram, 0, sizeof(ppu->cgram));
+  ppu->cgramGen++; // invalidate palette caches keyed on cgram content
   ppu->cgramPointer = 0;
   ppu->cgramSecondWrite = false;
   ppu->cgramBuffer = 0;
@@ -256,6 +257,7 @@ void ppu_handleState(Ppu* ppu, StateHandler* sh) {
   sh_handleByteArray(sh, ppu->highOam, 0x20);
   sh_handleByteArray(sh, ppu->objPixelBuffer, 256);
   sh_handleByteArray(sh, ppu->objPriorityBuffer, 256);
+  if(!sh->saving) ppu->cgramGen++; // loaded cgram: invalidate palette caches
 }
 
 bool ppu_checkOverscan(Ppu* ppu) {
@@ -357,6 +359,15 @@ static FF4_LR_SCRATCH bool     s_lrSpritesAny;      // any sprite pixel on this 
 static FF4_LR_SCRATCH uint16_t s_lrPix[2][256];     // composed pixel index   [0]=main [1]=sub
 static FF4_LR_SCRATCH uint8_t  s_lrLayer[2][256];   // composed layer id (5 = backdrop, 6 = no-math sprite)
 static FF4_LR_SCRATCH uint8_t  s_lrWin[6][256];     // window membership per window-layer, this line
+// R2a: final palette — cgram color with display brightness pre-applied, in
+// pixel-buffer byte order (b, g, r). Serves every no-math, no-clip,
+// non-direct-color pixel of the output stage with three byte copies.
+// Keyed on (cgramGen, brightness); s_lrPal3Valid sits in zeroed BSS so a
+// cold overlay start always rebuilds.
+static FF4_LR_SCRATCH uint8_t  s_lrPal3[256][3];
+static bool     s_lrPal3Valid;
+static uint32_t s_lrPal3Gen;
+static uint8_t  s_lrPal3Bright;
 
 static void ppu_lrDecodeBgLine(Ppu* ppu, int layer, int y) {
   // Same address/extraction math as ppu_getPixelForBgLayer, restricted to
@@ -526,9 +537,67 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
   const bool needSub = ppu->addSubscreen && mathAny;
   if(needSub) ppu_lrComposeLine(ppu, actMode, true, bgDecoded);
 
+  // R2a: refresh the final palette when cgram or brightness moved; the
+  // entries are exactly bright[] applied to the cgram channels, so a pal3
+  // copy is byte-identical to the historical per-pixel chain
+  if(!s_lrPal3Valid || s_lrPal3Gen != ppu->cgramGen || s_lrPal3Bright != ppu->brightness) {
+    for(int c = 0; c < 256; c++) {
+      const uint16_t col = ppu->cgram[c];
+      s_lrPal3[c][0] = bright[(col >> 10) & 0x1f]; // b
+      s_lrPal3[c][1] = bright[(col >> 5) & 0x1f];  // g
+      s_lrPal3[c][2] = bright[col & 0x1f];         // r
+    }
+    s_lrPal3Valid = true;
+    s_lrPal3Gen = ppu->cgramGen;
+    s_lrPal3Bright = ppu->brightness;
+  }
+  // direct color can only engage on a mode with an 8bpp layer
+  bool dcPossible = false;
+  if(ppu->directColor) {
+    for(int i = 0; i < layerCountPerMode[actMode]; i++) {
+      const int l = layersPerMode[actMode][i];
+      if(l < 4 && bitDepthsPerMode[actMode][l] == 8) { dcPossible = true; break; }
+    }
+  }
+
+  if(!mathAny && ppu->clipMode == 0 && !dcPossible) {
+    // no pixel on this line can clip, blend or use direct color: the whole
+    // output stage collapses to palette copies
+    for(int x = 0; x < 256; x++) {
+      const uint8_t* c3 = s_lrPal3[s_lrPix[0][x] & 0xff];
+      uint8_t *px = out + x * PPU_PIXELBUF_XPITCH + ppu->pixelOutputFormat;
+      px[0] = c3[0];
+      px[1] = c3[1];
+      px[2] = c3[2];
+    }
+    return;
+  }
+
   for(int x = 0; x < 256; x++) {
     const int pixel = s_lrPix[0][x];
     const int layer = s_lrLayer[0][x];
+    {
+      // R2a shortcut: same three tests the body below performs, hoisted —
+      // a pixel that neither clips, blends, nor uses direct color is a
+      // straight palette copy
+      const bool dcPix = dcPossible && layer < 4 && bitDepthsPerMode[actMode][layer] == 8;
+      const bool cws = s_lrWin[5][x] != 0;
+      const bool clipped = ppu->clipMode == 3 ||
+        (ppu->clipMode == 2 && cws) || (ppu->clipMode == 1 && !cws);
+      const bool math = layer < 6 && ppu->mathEnabled[layer] && !(
+        ppu->preventMathMode == 3 ||
+        (ppu->preventMathMode == 2 && cws) ||
+        (ppu->preventMathMode == 1 && !cws)
+      );
+      if(!dcPix && !clipped && !math) {
+        const uint8_t* c3 = s_lrPal3[pixel & 0xff];
+        uint8_t *px = out + x * PPU_PIXELBUF_XPITCH + ppu->pixelOutputFormat;
+        px[0] = c3[0];
+        px[1] = c3[1];
+        px[2] = c3[2];
+        continue;
+      }
+    }
     int r, g, b;
     if(ppu->directColor && layer < 4 && bitDepthsPerMode[actMode][layer] == 8) {
       r = ((pixel & 0x7) << 2) | ((pixel & 0x100) >> 7);
@@ -1371,6 +1440,7 @@ void ppu_write(Ppu* ppu, uint8_t adr, uint8_t val) {
         ppu->cgramBuffer = val;
       } else {
         ppu->cgram[ppu->cgramPointer++] = (val << 8) | ppu->cgramBuffer;
+        ppu->cgramGen++;
       }
       ppu->cgramSecondWrite = !ppu->cgramSecondWrite;
       break;

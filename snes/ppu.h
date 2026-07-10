@@ -47,6 +47,9 @@ struct Ppu {
   uint16_t vramReadBuffer;
   // cgram access
   uint16_t cgram[0x100];
+  // derived, never serialized: bumped on every cgram write (and forced on
+  // state load) so line-renderer palette caches can key on it (R2a)
+  uint32_t cgramGen;
   uint8_t cgramPointer;
   bool cgramSecondWrite;
   uint8_t cgramBuffer;
