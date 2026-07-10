@@ -790,6 +790,11 @@ void snes_cpuWrite(void* mem, uint32_t adr, uint8_t val) {
 
 // debugging
 
+bool snes_anyHdmaActive(Snes* snes) {
+  for(int i = 0; i < 8; i++) if(snes->dma->channel[i].hdmaActive) return true;
+  return false;
+}
+
 void snes_runCpuCycle(Snes* snes) {
   cpu_runOpcode(snes->cpu);
 }

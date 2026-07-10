@@ -131,6 +131,15 @@ struct Ppu {
   bool countersLatched;
   uint8_t ppu1openBus;
   uint8_t ppu2openBus;
+  // R4 dirty-frame render skip: signature of all render inputs, sampled at
+  // frame start; if unchanged from the last rendered frame (and no raster/
+  // HDMA writes could have altered pixels mid-frame), the whole frame's
+  // pixel production is skipped and pixelBuffer keeps the last frame. All
+  // derived, never serialized.
+  uint32_t skipSig, skipVramGen, skipCgramGen;
+  bool skipHaveBaseline;   // a frame has been rendered since reset/load
+  bool skipRasterWrite;    // a ppu_write landed on a visible line this frame
+  bool skipFrame;          // decision for the frame currently being scanned
   // pixel buffer (xbgr)
 #ifdef FF4_PORT_STATIC_SNES
   /* G&W port: single buffer instead of even/odd double buffer, and
