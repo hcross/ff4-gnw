@@ -15,8 +15,13 @@
 #include "input.h"
 #include "statehandler.h"
 
-static const double apuCyclesPerMaster = (32040 * 32) / (1364 * 262 * 60.0);
-static const double apuCyclesPerMasterPal = (32040 * 32) / (1364 * 312 * 50.0);
+// ADR-006: the apu debt is tracked exactly, as an integer numerator of apu
+// cycles against these denominators (apu cycles per master cycle = num/den;
+// the historical floating-point accumulator survives only as the serialized
+// state view, converted in snes_handleState).
+static const int64_t apuCycNum = 32040 * 32;
+static const int64_t apuCycDenNtsc = 1364 * 262 * 60;
+static const int64_t apuCycDenPal = 1364 * 312 * 50;
 
 static void snes_catchupApu(Snes* snes);
 static void snes_doAutoJoypad(Snes* snes);
@@ -79,6 +84,9 @@ void snes_reset(Snes* snes, bool hard) {
   snes->cycles = 0;
   snes->syncCycle = 0;
   snes->apuCatchupCycles = 0.0;
+  snes->apuPendingNum = 0;
+  snes->ticksToEvent = 0;
+  snes->irqCondInterior = false;
   snes->hIrqEnabled = false;
   snes->vIrqEnabled = false;
   snes->nmiEnabled = false;
@@ -113,7 +121,19 @@ void snes_handleState(Snes* snes, StateHandler* sh) {
   );
   sh_handleInts(sh, &snes->ramAdr, &snes->frames, NULL);
   sh_handleLongLongs(sh, &snes->cycles, &snes->syncCycle, NULL);
-  sh_handleDoubles(sh, &snes->apuCatchupCycles, NULL);
+  // ADR-006: .lss files keep the historical double view of the apu debt so
+  // states stay loadable both ways; the live counter is the exact integer
+  // numerator. palTiming was already restored by the bools above.
+  {
+    const int64_t den = snes->palTiming ? apuCycDenPal : apuCycDenNtsc;
+    if(sh->saving) snes->apuCatchupCycles = (double)snes->apuPendingNum / (double)den;
+    sh_handleDoubles(sh, &snes->apuCatchupCycles, NULL);
+    if(!sh->saving) {
+      const double num = snes->apuCatchupCycles * (double)den;
+      snes->apuPendingNum = (int64_t)(num >= 0.0 ? num + 0.5 : num - 0.5);
+    }
+  }
+  snes->ticksToEvent = 0; // downcounter cache is never trusted across a state load
   sh_handleByteArray(sh, snes->ram, 0x20000);
   // components
   cpu_handleState(snes->cpu, sh);
@@ -192,9 +212,27 @@ void snes_runCycles(Snes* snes, int cycles) {
     // if we go past 536, add 40 cycles for dram refersh
     cycles += 40;
   }
-  const double apuPerTick =
-    (snes->palTiming ? apuCyclesPerMasterPal : apuCyclesPerMaster) * 2.0;
   int ticks = (cycles + 1) >> 1; // old loop was for(i=0;i<cycles;i+=2): ceil
+  if(ticks <= 0) return;
+  const int64_t apuNumPerTick = 2 * apuCycNum; // same numerator NTSC/PAL
+  // fast path: the whole run stays inside the current segment — no tick owes
+  // event work, every update is linear, O(1) per call. ticksToEvent is
+  // maintained by the segment loop below and zeroed by anything that could
+  // change the event set outside it (timer/irq register writes, reset,
+  // state load), which forces the next call through the full machinery.
+  if(ticks <= snes->ticksToEvent) {
+    snes->ticksToEvent -= ticks;
+    snes->irqCondition = snes->irqCondInterior;
+    snes->apuPendingNum += apuNumPerTick * ticks;
+    snes->cycles += 2 * (uint64_t)ticks;
+    if(snes->autoJoyTimer > 0) {
+      int dec = 2 * ticks;
+      snes->autoJoyTimer =
+        (snes->autoJoyTimer > dec) ? (uint16_t)(snes->autoJoyTimer - dec) : 0;
+    }
+    snes->hPos += 2 * ticks;
+    return;
+  }
   while(ticks > 0) {
     const int h = snes->hPos;
     const int v = snes->vPos;
@@ -273,10 +311,17 @@ void snes_runCycles(Snes* snes, int cycles) {
     int n = (nextEvent - h) >> 1;
     if(n > ticks) n = ticks;
     if(n < 1) n = 1; // corrupt-hPos guard: march like the old code did
+    // per-tick irq condition anywhere strictly inside this segment: hPos
+    // cannot equal hTimer*4 there (the segment stops at it), so the h-term
+    // only passes when the h-irq is disabled. No interior rising edge is
+    // possible: this being true implies the boundary condition already was.
+    const bool irqInterior = (
+      (snes->vIrqEnabled || snes->hIrqEnabled) &&
+      (v == snes->vTimer || !snes->vIrqEnabled) &&
+      !snes->hIrqEnabled
+    );
     // ---- bulk-apply the n ticks ----
-    // one addition per tick, replayed: a fused `+= apuPerTick * n` rounds
-    // differently and breaks the byte-identical validation bar
-    for(int i = 0; i < n; i++) snes->apuCatchupCycles += apuPerTick;
+    snes->apuPendingNum += apuNumPerTick * n; // exact integer debt (ADR-006)
     snes->cycles += 2 * (uint64_t)n;
     if(snes->autoJoyTimer > 0) {
       int dec = 2 * n;
@@ -284,19 +329,13 @@ void snes_runCycles(Snes* snes, int cycles) {
         (snes->autoJoyTimer > dec) ? (uint16_t)(snes->autoJoyTimer - dec) : 0;
     }
     if(n > 1) {
-      // irqCondition must end as the per-tick check would have left it: at
-      // every interior tick hPos != hTimer*4 (the segment stops there), so
-      // the h-term only passes when the h-irq is disabled. No interior
-      // rising edge is possible: this expression true implies the boundary
-      // condition above was already true.
-      snes->irqCondition = (
-        (snes->vIrqEnabled || snes->hIrqEnabled) &&
-        (v == snes->vTimer || !snes->vIrqEnabled) &&
-        !snes->hIrqEnabled
-      );
+      // irqCondition must end as the per-tick check would have left it
+      snes->irqCondition = irqInterior;
     }
+    snes->irqCondInterior = irqInterior;
     int newH = h + 2 * n;
     if(newH == lineEnd) {
+      snes->ticksToEvent = 0; // hPos 0 owes event work next tick
       snes->hPos = 0;
       snes->vPos++;
       if(!snes->palTiming) {
@@ -313,6 +352,14 @@ void snes_runCycles(Snes* snes, int cycles) {
         }
       }
     } else {
+      // ticks runnable from the new position before the next owed-work tick.
+      // Positional events are owed by the tick that STARTS at the boundary,
+      // so landing exactly on one is fine (next call goes slow-path). The
+      // line wrap is owed by the tick that ENDS at lineEnd — that tick must
+      // run in the slow path, so it never counts as fast-path budget.
+      int rem = (nextEvent - newH) >> 1;
+      if(nextEvent == lineEnd && rem > 0) rem -= 1;
+      snes->ticksToEvent = rem;
       snes->hPos = (uint16_t)newH;
     }
     ticks -= n;
@@ -331,9 +378,13 @@ void snes_syncCycles(Snes* snes, bool start, int syncCycles) {
 }
 
 static void snes_catchupApu(Snes* snes) {
-  int catchupCycles = (int) snes->apuCatchupCycles;
+  // ADR-006: exact integer debt. C division truncates toward zero, mirroring
+  // the historical (int) cast of the double (the debt can go negative when
+  // apu_runCycles overruns, exactly as before).
+  const int64_t den = snes->palTiming ? apuCycDenPal : apuCycDenNtsc;
+  int catchupCycles = (int)(snes->apuPendingNum / den);
   int ranCycles = apu_runCycles(snes->apu, catchupCycles);
-  snes->apuCatchupCycles -= (double) ranCycles;
+  snes->apuPendingNum -= (int64_t)ranCycles * den;
 }
 
 static void snes_doAutoJoypad(Snes* snes) {
@@ -482,6 +533,7 @@ static void snes_writeReg(Snes* snes, uint16_t adr, uint8_t val) {
         cpu_nmi(snes->cpu);
       }
       snes->nmiEnabled = val & 0x80;
+      snes->ticksToEvent = 0; // irq enables changed: rebuild the event set
       break;
     }
     case 0x4201: {
@@ -520,18 +572,22 @@ static void snes_writeReg(Snes* snes, uint16_t adr, uint8_t val) {
     }
     case 0x4207: {
       snes->hTimer = (snes->hTimer & 0x100) | val;
+      snes->ticksToEvent = 0; // h-irq point moved: rebuild the event set
       break;
     }
     case 0x4208: {
       snes->hTimer = (snes->hTimer & 0x0ff) | ((val & 1) << 8);
+      snes->ticksToEvent = 0;
       break;
     }
     case 0x4209: {
       snes->vTimer = (snes->vTimer & 0x100) | val;
+      snes->ticksToEvent = 0; // v-irq line moved: interior condition stale
       break;
     }
     case 0x420a: {
       snes->vTimer = (snes->vTimer & 0x0ff) | ((val & 1) << 8);
+      snes->ticksToEvent = 0;
       break;
     }
     case 0x420b: {

@@ -35,7 +35,13 @@ struct Snes {
   uint64_t cycles;
   uint64_t syncCycle;
   // cpu handling
-  double apuCatchupCycles;
+  double apuCatchupCycles; // serialization view only (ADR-006); live debt is apuPendingNum
+  // E1 fast-path state — NOT serialized (reconstructed on load/reset):
+  // apu debt as an exact integer numerator (denominator = master cycles per
+  // apu-cycle window, see snes.c), plus the run-without-event-work downcounter
+  int64_t apuPendingNum;
+  int ticksToEvent;      // ticks runnable from hPos before a tick owes event work
+  bool irqCondInterior;  // per-tick irq condition value inside the current segment
   // nmi / irq
   bool hIrqEnabled;
   bool vIrqEnabled;
