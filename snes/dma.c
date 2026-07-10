@@ -64,11 +64,15 @@ void dma_reset(Dma* dma) {
   dma->dmaState = 0;
   dma->hdmaInitRequested = false;
   dma->hdmaRunRequested = false;
+  dma->pending = false;
 }
 
 void dma_handleState(Dma* dma, StateHandler* sh) {
   sh_handleBools(sh, &dma->hdmaInitRequested, &dma->hdmaRunRequested, NULL);
   sh_handleBytes(sh, &dma->dmaState, NULL);
+  // pending is derived, not serialized: rebuild it from the loaded fields
+  // (harmless recompute on save)
+  dma->pending = dma->dmaState != 0 || dma->hdmaInitRequested || dma->hdmaRunRequested;
   for(int i = 0; i < 8; i++) {
     sh_handleBools(sh,
       &dma->channel[i].dmaActive, &dma->channel[i].hdmaActive, &dma->channel[i].fixed, &dma->channel[i].decrement,
@@ -361,6 +365,7 @@ void dma_handleDma(Dma* dma, int cpuCycles) {
   if(dma->hdmaRunRequested && dma->dmaState != 2) dma_doHdma(dma, true, cpuCycles);
   if(dma->dmaState == 1) {
     dma->dmaState = 2;
+    dma->pending = true;
     return;
   }
   if(dma->dmaState == 2) {
@@ -368,6 +373,7 @@ void dma_handleDma(Dma* dma, int cpuCycles) {
     dma_doDma(dma, cpuCycles);
     dma->dmaState = 0;
   }
+  dma->pending = dma->dmaState != 0 || dma->hdmaInitRequested || dma->hdmaRunRequested;
 }
 
 void dma_startDma(Dma* dma, uint8_t val, bool hdma) {
@@ -381,4 +387,5 @@ void dma_startDma(Dma* dma, uint8_t val, bool hdma) {
   if(!hdma) {
     dma->dmaState = val != 0 ? 1 : 0;
   }
+  dma->pending = dma->dmaState != 0 || dma->hdmaInitRequested || dma->hdmaRunRequested;
 }

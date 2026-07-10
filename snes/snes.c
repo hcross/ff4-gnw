@@ -29,6 +29,20 @@ static uint8_t snes_readReg(Snes* snes, uint16_t adr);
 static void snes_writeReg(Snes* snes, uint16_t adr, uint8_t val);
 static uint8_t snes_rread(Snes* snes, uint32_t adr); // wrapped by read, to set open bus
 static int snes_getAccessTime(Snes* snes, uint32_t adr);
+static void snes_rebuildAccessMaps(Snes* snes);
+
+// E2: per-8KB-slot access maps for the cpu memory hot path (profiled at
+// ~35% of the M7 frame: getAccessTime + dma early-out + the rread bank
+// decode chain, ~90k calls/frame). Index = bank<<3 | adr>>13 (2048 slots).
+// s_readPtr: direct pointer to the slot's backing memory when the whole
+// slot is plain WRAM/ROM/SRAM, NULL when any byte of it is MMIO/open-bus
+// (slow path keeps full semantics). s_accessCycles: the slot's uniform
+// access time, 0 when mixed inside the slot ($4000-$5fff: 12 then 6).
+// File-scope singletons: pointers reference the one static Snes instance
+// (FF4_PORT_STATIC_SNES contract) — a multi-instance build would need
+// these per-instance. Rebuilt on reset, state load and $420d (fastMem).
+static const uint8_t* s_readPtr[2048];
+static uint8_t s_accessCycles[2048];
 
 #ifdef FF4_PORT_STATIC_SNES
 /* G&W port: place the 128 KB Snes (mostly its ram[0x20000]) in
@@ -106,6 +120,7 @@ void snes_reset(Snes* snes, bool hard) {
   snes->divideResult = 0x101;
   snes->fastMem = false;
   snes->openBus = 0;
+  snes_rebuildAccessMaps(snes); // cart is loaded before reset (snes_loadRom)
 }
 
 void snes_handleState(Snes* snes, StateHandler* sh) {
@@ -143,6 +158,7 @@ void snes_handleState(Snes* snes, StateHandler* sh) {
   input_handleState(snes->input1, sh);
   input_handleState(snes->input2, sh);
   cart_handleState(snes->cart, sh);
+  snes_rebuildAccessMaps(snes); // fastMem may have changed with the state
 }
 
 #ifdef FF4_PORT_STATIC_SNES
@@ -278,12 +294,12 @@ void snes_runCycles(Snes* snes, int cycles) {
         }
       }
     } else if(h == 16) {
-      if(v == 0) snes->dma->hdmaInitRequested = true;
+      if(v == 0) { snes->dma->hdmaInitRequested = true; snes->dma->pending = true; }
     } else if(h == 512) {
       // render the line halfway of the screen for better compatibility
       if(!snes->inVblank && v > 0) ppu_runLine(snes->ppu, v);
     } else if(h == 1104) {
-      if(!snes->inVblank) snes->dma->hdmaRunRequested = true;
+      if(!snes->inVblank) { snes->dma->hdmaRunRequested = true; snes->dma->pending = true; }
     }
     // ---- how far can we run before another tick owes event work? ----
     // evenFrame/frameInterlace/inVblank/timers only change inside the event
@@ -374,6 +390,51 @@ void snes_syncCycles(Snes* snes, bool start, int syncCycles) {
   } else {
     int count = syncCycles - ((snes->cycles - snes->syncCycle) % syncCycles);
     snes_runCycles(snes, count);
+  }
+}
+
+static void snes_rebuildAccessMaps(Snes* snes) {
+  Cart* cart = snes->cart;
+  const bool romOk = cart->type == 1 && cart->rom != NULL &&
+    cart->romSize >= 0x2000 && (cart->romSize & (cart->romSize - 1)) == 0;
+  const bool sramOk = cart->type == 1 && cart->ram != NULL &&
+    cart->ramSize >= 0x2000 && (cart->ramSize & (cart->ramSize - 1)) == 0;
+  for(int bank = 0; bank < 0x100; bank++) {
+    for(int r = 0; r < 8; r++) {
+      const int slot = (bank << 3) | r;
+      const uint32_t adr = (uint32_t)r << 13;
+      const uint8_t* ptr = NULL;
+      uint8_t cyc;
+      // access time per slot — mirrors snes_getAccessTime exactly
+      if((bank < 0x40 || (bank >= 0x80 && bank < 0xc0)) && adr < 0x8000) {
+        if(r == 1) cyc = 6;
+        else if(r == 2) cyc = 0; // 4000-41ff is 12, 4200-5fff is 6: mixed
+        else cyc = 8;            // 0-1fff, 6000-7fff
+      } else {
+        cyc = (snes->fastMem && bank >= 0x80) ? 6 : 8;
+      }
+      // direct read pointer per slot — mirrors snes_rread + cart_readLorom
+      if(bank == 0x7e || bank == 0x7f) {
+        ptr = &snes->ram[((uint32_t)(bank & 1) << 16) | adr];
+      } else if(bank < 0x40 || (bank >= 0x80 && bank < 0xc0)) {
+        if(r == 0) {
+          ptr = snes->ram; // wram mirror
+        } else if(r >= 4 && romOk) {
+          ptr = &cart->rom[(((uint32_t)(bank & 0x7f) << 15) | (adr & 0x7fff)) & (cart->romSize - 1)];
+        }
+        // r 1..3: B-bus/registers/open-bus — slow path
+      } else if(((bank >= 0x70 && bank < 0x7e) || bank >= 0xf0) && adr < 0x8000) {
+        if(sramOk) {
+          ptr = &cart->ram[(((uint32_t)(bank & 0xf) << 15) | adr) & (cart->ramSize - 1)];
+        }
+        // odd-sized sram: mask may wrap inside the slot — slow path
+      } else if(romOk) {
+        // banks 40-6f and c0-ef whole range, plus 70-7d/f0-ff upper half
+        ptr = &cart->rom[(((uint32_t)(bank & 0x7f) << 15) | (adr & 0x7fff)) & (cart->romSize - 1)];
+      }
+      s_readPtr[slot] = ptr;
+      s_accessCycles[slot] = cyc;
+    }
   }
 }
 
@@ -600,6 +661,7 @@ static void snes_writeReg(Snes* snes, uint16_t adr, uint8_t val) {
     }
     case 0x420d: {
       snes->fastMem = val & 0x1;
+      snes_rebuildAccessMaps(snes); // upper-bank access times depend on fastMem
       break;
     }
     default: {
@@ -695,22 +757,33 @@ uint8_t snes_read(Snes* snes, uint32_t adr) {
 
 void snes_cpuIdle(void* mem, bool waiting) {
   Snes* snes = (Snes*) mem;
-  dma_handleDma(snes->dma, 6);
+  if(snes->dma->pending) dma_handleDma(snes->dma, 6);
   snes_runCycles(snes, 6);
 }
 
 uint8_t snes_cpuRead(void* mem, uint32_t adr) {
   Snes* snes = (Snes*) mem;
-  int cycles = snes_getAccessTime(snes, adr);
-  dma_handleDma(snes->dma, cycles);
+  const uint32_t slot = (adr >> 13) & 0x7ff;
+  int cycles = s_accessCycles[slot];
+  if(cycles == 0) cycles = snes_getAccessTime(snes, adr); // mixed slot
+  if(snes->dma->pending) dma_handleDma(snes->dma, cycles);
   snes_runCycles(snes, cycles);
+  const uint8_t* p = s_readPtr[slot];
+  if(p != NULL) {
+    // plain memory: same value snes_read would return, open bus included
+    const uint8_t val = p[adr & 0x1fff];
+    snes->openBus = val;
+    return val;
+  }
   return snes_read(snes, adr);
 }
 
 void snes_cpuWrite(void* mem, uint32_t adr, uint8_t val) {
   Snes* snes = (Snes*) mem;
-  int cycles = snes_getAccessTime(snes, adr);
-  dma_handleDma(snes->dma, cycles);
+  const uint32_t slot = (adr >> 13) & 0x7ff;
+  int cycles = s_accessCycles[slot];
+  if(cycles == 0) cycles = snes_getAccessTime(snes, adr); // mixed slot
+  if(snes->dma->pending) dma_handleDma(snes->dma, cycles);
   snes_runCycles(snes, cycles);
   snes_write(snes, adr, val);
 }

@@ -37,6 +37,11 @@ struct Dma {
   uint8_t dmaState;
   bool hdmaInitRequested;
   bool hdmaRunRequested;
+  // derived, never serialized: true iff any of the three fields above is
+  // set. Lets the per-memory-access hot path gate dma_handleDma behind a
+  // single load instead of a call + three loads (E2). Recomputed at every
+  // site that mutates the fields, and after a state load.
+  bool pending;
 };
 
 Dma* dma_init(Snes* snes);
