@@ -84,6 +84,7 @@ void snes_cpuIdle(void* mem, bool waiting);
 uint8_t snes_cpuRead(void* mem, uint32_t adr);
 void snes_cpuWrite(void* mem, uint32_t adr, uint8_t val);
 // debugging
+bool snes_anyHdmaActive(Snes* snes); // R4: any HDMA channel active (raster-effect gate)
 void snes_runCpuCycle(Snes* snes);
 void snes_runSpcCycle(Snes* snes);
 

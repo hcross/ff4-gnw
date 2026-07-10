@@ -108,6 +108,7 @@ void ppu_reset(Ppu* ppu) {
   ppu->vramReadBuffer = 0;
   memset(ppu->cgram, 0, sizeof(ppu->cgram));
   ppu->cgramGen++; // invalidate palette caches keyed on cgram content
+  ppu->skipHaveBaseline = false; ppu->skipRasterWrite = false; ppu->skipFrame = false; // R4
   ppu->cgramPointer = 0;
   ppu->cgramSecondWrite = false;
   ppu->cgramBuffer = 0;
@@ -258,7 +259,7 @@ void ppu_handleState(Ppu* ppu, StateHandler* sh) {
   sh_handleByteArray(sh, ppu->highOam, 0x20);
   sh_handleByteArray(sh, ppu->objPixelBuffer, 256);
   sh_handleByteArray(sh, ppu->objPriorityBuffer, 256);
-  if(!sh->saving) { ppu->cgramGen++; ppu->vramGen++; } // loaded gfx: invalidate caches
+  if(!sh->saving) { ppu->cgramGen++; ppu->vramGen++; ppu->skipHaveBaseline = false; } // loaded gfx: invalidate caches + force a render
 }
 
 bool ppu_checkOverscan(Ppu* ppu) {
@@ -283,6 +284,52 @@ void ppu_handleVblank(Ppu* ppu) {
 #endif
 }
 
+// R4: FNV-1a fold of a memory range into a running hash.
+static uint32_t ppu_fnv(uint32_t h, const void *p, unsigned n) {
+  const uint8_t *b = (const uint8_t *)p;
+  for(unsigned i = 0; i < n; i++) { h ^= b[i]; h *= 16777619u; }
+  return h;
+}
+
+// R4: signature of everything the pixel render reads. Excludes the volatile
+// per-line scratch (objPixelBuffer/objPriorityBuffer, rebuilt each line) and
+// the frame-parity latch (evenFrame/frameInterlace). vram/cgram are summed by
+// their gen counters, not rehashed here. Over-inclusion only costs a missed
+// skip (never a wrong one); the risk to guard is UNDER-inclusion, caught by
+// the per-frame framebuffer-CRC validation over animated fixtures.
+static uint32_t ppu_computeRenderSig(Ppu* ppu) {
+  uint32_t h = 2166136261u;
+  h = ppu_fnv(h, ppu->oam, sizeof(ppu->oam) + sizeof(ppu->highOam)); // oam+highOam adjacent
+  h = ppu_fnv(h, &ppu->objPriority, sizeof(uint8_t));
+  h = ppu_fnv(h, &ppu->objTileAdr1, sizeof(ppu->objTileAdr1));
+  h = ppu_fnv(h, &ppu->objTileAdr2, sizeof(ppu->objTileAdr2));
+  h = ppu_fnv(h, &ppu->objSize, sizeof(ppu->objSize));
+  h = ppu_fnv(h, &ppu->objInterlace, sizeof(uint8_t));
+  h = ppu_fnv(h, ppu->bgLayer, sizeof(ppu->bgLayer));
+  h = ppu_fnv(h, &ppu->mosaicSize, sizeof(ppu->mosaicSize));
+  h = ppu_fnv(h, ppu->layer, sizeof(ppu->layer));
+  h = ppu_fnv(h, ppu->m7matrix, sizeof(ppu->m7matrix));
+  h = ppu_fnv(h, &ppu->m7largeField, 5); // m7largeField/charFill/xFlip/yFlip/extBg bools
+  h = ppu_fnv(h, &ppu->m7startX, sizeof(ppu->m7startX) + sizeof(ppu->m7startY));
+  h = ppu_fnv(h, ppu->windowLayer, sizeof(ppu->windowLayer));
+  h = ppu_fnv(h, &ppu->window1left, 4); // window1left/right, window2left/right
+  h = ppu_fnv(h, &ppu->clipMode, sizeof(ppu->clipMode));
+  h = ppu_fnv(h, &ppu->preventMathMode, sizeof(ppu->preventMathMode));
+  h = ppu_fnv(h, &ppu->addSubscreen, 3); // addSubscreen/subtractColor/halfColor
+  h = ppu_fnv(h, ppu->mathEnabled, sizeof(ppu->mathEnabled));
+  h = ppu_fnv(h, &ppu->fixedColorR, 3);
+  h = ppu_fnv(h, &ppu->forcedBlank, 1);
+  h = ppu_fnv(h, &ppu->brightness, sizeof(ppu->brightness));
+  h = ppu_fnv(h, &ppu->mode, sizeof(ppu->mode));
+  h = ppu_fnv(h, &ppu->bg3priority, 1);
+  h = ppu_fnv(h, &ppu->pseudoHires, 1);
+  h = ppu_fnv(h, &ppu->overscan, 1);
+  h = ppu_fnv(h, &ppu->frameOverscan, 1);
+  h = ppu_fnv(h, &ppu->interlace, 1);
+  h = ppu_fnv(h, &ppu->directColor, 1);
+  return h;
+}
+
 void ppu_handleFrameStart(Ppu* ppu) {
   // called at (0, 0)
   ppu->mosaicStartLine = 1;
@@ -296,6 +343,29 @@ void ppu_handleFrameStart(Ppu* ppu) {
 #else
   ppu->evenFrame = !ppu->evenFrame;
 #endif
+  // R4 dirty-frame skip decision for the frame that starts now. Skip only
+  // when every render input matches the last rendered frame AND nothing
+  // could have altered pixels mid-frame: no visible-line ppu_write last
+  // frame, and no HDMA channel armed (HDMA drives per-line raster effects
+  // through ppu_write, and the frame it first arms would otherwise slip
+  // through this start-of-frame signature).
+  {
+    const uint32_t sig = ppu_computeRenderSig(ppu);
+    const bool prevFrameRaster = ppu->skipRasterWrite;
+    ppu->skipRasterWrite = false;
+    const bool canSkip = ppu->skipHaveBaseline && !prevFrameRaster
+      && !snes_anyHdmaActive(ppu->snes)
+      && sig == ppu->skipSig
+      && ppu->vramGen == ppu->skipVramGen
+      && ppu->cgramGen == ppu->skipCgramGen;
+    ppu->skipFrame = canSkip;
+    if(!canSkip) {
+      ppu->skipSig = sig;
+      ppu->skipVramGen = ppu->vramGen;
+      ppu->skipCgramGen = ppu->cgramGen;
+      ppu->skipHaveBaseline = true;
+    }
+  }
 }
 
 /* Per-scanline BG fetch cache. ppu_getPixelForBgLayer is called once per
@@ -723,6 +793,7 @@ void ppu_runLine(Ppu* ppu, int line) {
    * range/time-over flags are game-visible via $213E -- but everything
    * below only feeds pixelBuffer, so a skipped frame bails out here. */
   if(!ff4_ppu_render_enabled) return;
+  if(ppu->skipFrame) return;   // R4: render inputs unchanged since last frame
   if(ppu_lrFastPathOk(ppu)) {
     ppu_lrRunLine(ppu, line);
     return;
@@ -1302,6 +1373,10 @@ uint8_t ppu_read(Ppu* ppu, uint8_t adr) {
 }
 
 void ppu_write(Ppu* ppu, uint8_t adr, uint8_t val) {
+  // R4: a PPU write on a visible scanline can change pixels mid-frame
+  // (raster effect); such a frame is not summarized by its start-of-frame
+  // signature, so bar the next frame from skipping against it.
+  { const uint16_t vp = ppu->snes->vPos; if(vp >= 1 && vp <= 224) ppu->skipRasterWrite = true; }
   switch(adr) {
     case 0x00: {
       // TODO: oam address reset when written on first line of vblank, (and when forced blank is disabled?)
