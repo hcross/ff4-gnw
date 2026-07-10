@@ -40,6 +40,10 @@ struct Ppu {
   Snes* snes;
   // vram access
   uint16_t vram[0x8000];
+  // derived, never serialized: bumped on every vram write, reset and state
+  // load, so the line-renderer decoded-tile-row cache can invalidate on any
+  // vram change (R2b)
+  uint32_t vramGen;
   uint16_t vramPointer;
   bool vramIncrementOnHigh;
   uint16_t vramIncrement;

@@ -100,6 +100,7 @@ void ppu_free(Ppu* ppu) {
 
 void ppu_reset(Ppu* ppu) {
   memset(ppu->vram, 0, sizeof(ppu->vram));
+  ppu->vramGen++; // invalidate the decoded-tile-row cache (R2b)
   ppu->vramPointer = 0;
   ppu->vramIncrementOnHigh = false;
   ppu->vramIncrement = 1;
@@ -257,7 +258,7 @@ void ppu_handleState(Ppu* ppu, StateHandler* sh) {
   sh_handleByteArray(sh, ppu->highOam, 0x20);
   sh_handleByteArray(sh, ppu->objPixelBuffer, 256);
   sh_handleByteArray(sh, ppu->objPriorityBuffer, 256);
-  if(!sh->saving) ppu->cgramGen++; // loaded cgram: invalidate palette caches
+  if(!sh->saving) { ppu->cgramGen++; ppu->vramGen++; } // loaded gfx: invalidate caches
 }
 
 bool ppu_checkOverscan(Ppu* ppu) {
@@ -369,6 +370,21 @@ static bool     s_lrPal3Valid;
 static uint32_t s_lrPal3Gen;
 static uint8_t  s_lrPal3Bright;
 
+// R2b: decoded-tile-row cache. Keyed on (planeAdr, bitDepth) — the VRAM
+// word address of a tile's row and its bit depth fully determine the eight
+// dechunked palette-relative pixel values, BEFORE hFlip and palette offset
+// (both applied per use). raw[k] = the pixel built from bitplane column k
+// (k = 0..7), so a use reads raw[hFlip ? px : 7-px]. Invalidated wholesale
+// by ppu->vramGen: measured 0 VRAM writes/frame on the title and ~5 frames
+// in 6 on field, so hit rate is ~100% on the scenes this targets. Direct-
+// mapped, 4096 slots; a collision or a gen miss just re-decodes (still
+// byte-identical). File-scope singleton — FF4_PORT_STATIC_SNES contract,
+// like the E2 access maps.
+#define LR_TRC_SLOTS 4096
+static uint8_t  s_trcRaw[LR_TRC_SLOTS][8];
+static uint32_t s_trcKey[LR_TRC_SLOTS];   // (planeAdr << 4) | bitDepth
+static uint32_t s_trcGen[LR_TRC_SLOTS];
+
 static void ppu_lrDecodeBgLine(Ppu* ppu, int layer, int y) {
   // Same address/extraction math as ppu_getPixelForBgLayer, restricted to
   // modes 0/1/3 (wideTiles == bigTiles, same tileBits/highBit both axes),
@@ -402,29 +418,41 @@ static void ppu_lrDecodeBgLine(Ppu* ppu, int layer, int y) {
     if(ppu->mode == 0) paletteNum += 8 * layer;
     const int paletteBase = paletteSize * paletteNum;
     const uint16_t planeAdr = (ppu->bgLayer[layer].tileAdr + ((tileNum & 0x3ff) * 4 * bitDepth) + row) & 0x7fff;
-    const uint16_t plane1 = ppu->vram[planeAdr];
-    uint16_t plane2 = 0, plane3 = 0, plane4 = 0;
-    if(bitDepth > 2) plane2 = ppu->vram[(planeAdr + 8) & 0x7fff];
-    if(bitDepth > 4) {
-      plane3 = ppu->vram[(planeAdr + 16) & 0x7fff];
-      plane4 = ppu->vram[(planeAdr + 24) & 0x7fff];
+    // R2b: fetch (or build) this row's eight dechunked pixels in column
+    // order (raw[k] from bitplane column k), before hFlip and palette
+    const uint32_t trcKey = ((uint32_t)planeAdr << 4) | (uint32_t)bitDepth;
+    const uint32_t trcSlot = planeAdr & (LR_TRC_SLOTS - 1);
+    uint8_t *raw = s_trcRaw[trcSlot];
+    if(s_trcGen[trcSlot] != ppu->vramGen || s_trcKey[trcSlot] != trcKey) {
+      const uint16_t plane1 = ppu->vram[planeAdr];
+      uint16_t plane2 = 0, plane3 = 0, plane4 = 0;
+      if(bitDepth > 2) plane2 = ppu->vram[(planeAdr + 8) & 0x7fff];
+      if(bitDepth > 4) {
+        plane3 = ppu->vram[(planeAdr + 16) & 0x7fff];
+        plane4 = ppu->vram[(planeAdr + 24) & 0x7fff];
+      }
+      for(int col = 0; col < 8; col++) {
+        int pixel = (plane1 >> col) & 1;
+        pixel |= ((plane1 >> (8 + col)) & 1) << 1;
+        if(bitDepth > 2) {
+          pixel |= ((plane2 >> col) & 1) << 2;
+          pixel |= ((plane2 >> (8 + col)) & 1) << 3;
+        }
+        if(bitDepth > 4) {
+          pixel |= ((plane3 >> col) & 1) << 4;
+          pixel |= ((plane3 >> (8 + col)) & 1) << 5;
+          pixel |= ((plane4 >> col) & 1) << 6;
+          pixel |= ((plane4 >> (8 + col)) & 1) << 7;
+        }
+        raw[col] = (uint8_t)pixel;
+      }
+      s_trcGen[trcSlot] = ppu->vramGen;
+      s_trcKey[trcSlot] = trcKey;
     }
     const bool hFlip = (tile & 0x4000) != 0;
     for(int i = 0; i < spanLen; i++) {
       const int px = (lx + i) & 0x7;
-      const int col = hFlip ? px : 7 - px;
-      int pixel = (plane1 >> col) & 1;
-      pixel |= ((plane1 >> (8 + col)) & 1) << 1;
-      if(bitDepth > 2) {
-        pixel |= ((plane2 >> col) & 1) << 2;
-        pixel |= ((plane2 >> (8 + col)) & 1) << 3;
-      }
-      if(bitDepth > 4) {
-        pixel |= ((plane3 >> col) & 1) << 4;
-        pixel |= ((plane3 >> (8 + col)) & 1) << 5;
-        pixel |= ((plane4 >> col) & 1) << 6;
-        pixel |= ((plane4 >> (8 + col)) & 1) << 7;
-      }
+      const int pixel = raw[hFlip ? px : 7 - px];
       s_lrVal[layer][sx + i] = pixel == 0 ? 0 : (uint16_t)(paletteBase + pixel);
       s_lrPrio[layer][sx + i] = prio;
       if(pixel != 0) s_lrHasPrio[layer][prio] = 1;
@@ -1381,12 +1409,14 @@ void ppu_write(Ppu* ppu, uint8_t adr, uint8_t val) {
       // TODO: vram access during rendering (also cgram and oam)
       uint16_t vramAdr = ppu_getVramRemap(ppu);
       ppu->vram[vramAdr & 0x7fff] = (ppu->vram[vramAdr & 0x7fff] & 0xff00) | val;
+      ppu->vramGen++;
       if(!ppu->vramIncrementOnHigh) ppu->vramPointer += ppu->vramIncrement;
       break;
     }
     case 0x19: {
       uint16_t vramAdr = ppu_getVramRemap(ppu);
       ppu->vram[vramAdr & 0x7fff] = (ppu->vram[vramAdr & 0x7fff] & 0x00ff) | (val << 8);
+      ppu->vramGen++;
       if(ppu->vramIncrementOnHigh) ppu->vramPointer += ppu->vramIncrement;
       break;
     }
