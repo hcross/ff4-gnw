@@ -71,6 +71,7 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x00834e, InitMapRAM_c },  /* field */
     { 0x00883d, _00883d_c },  /* field */
     { 0x00885e, _00885e_c },  /* field */
+    { 0x009fc2, GetTileProps_c },  /* field — map tile properties; entry is $9FC2 not $9FC0 (disasm off-by-2, 4th instance) */
     { 0x00aa58, CheckTilePass_c },  /* field */
     { 0x00aad8, SetPlayerNPCMap_c },  /* field */
     { 0x00ab13, ClearPlayerNPCMap_c },  /* field */
