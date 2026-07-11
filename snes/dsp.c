@@ -292,14 +292,21 @@ static void dsp_cycleChannel(Dsp* dsp, int ch) {
     }
     pitch = 0;
   }
-  // get sample
+  // get sample. FF4 A2: with gain == 0 the post-gain sample is 0 whatever
+  // the source value -- OUTX, sampleOut (next channel's pitch-mod input)
+  // and both mix contributions all read the post-gain value, and
+  // dsp_getSample is pure (interpolation over decodeBuffer) -- so the
+  // gaussian work is skipped for silent channels. BRR decode and the
+  // pitch counter march on below, unchanged.
   int sample = 0;
-  if(dsp->channel[ch].useNoise) {
-    sample = clip16(dsp->noiseSample * 2);
-  } else {
-    sample = dsp_getSample(dsp, ch);
+  if(dsp->channel[ch].gain != 0) {
+    if(dsp->channel[ch].useNoise) {
+      sample = clip16(dsp->noiseSample * 2);
+    } else {
+      sample = dsp_getSample(dsp, ch);
+    }
+    sample = ((sample * dsp->channel[ch].gain) >> 11) & ~1;
   }
-  sample = ((sample * dsp->channel[ch].gain) >> 11) & ~1;
   // handle reset and release
   if(dsp->reset || (dsp->channel[ch].brrHeader & 0x03) == 1) {
     dsp->channel[ch].adsrState = 3; // go to release
@@ -400,12 +407,17 @@ static void dsp_handleGain(Dsp* dsp, int ch) {
 }
 
 static int16_t dsp_getSample(Dsp* dsp, int ch) {
+  // pos = pitchCounter>>12 (0..7) + bufferOffset (0..10, even) <= 17;
+  // pos+3 <= 20: one small table replaces four integer divisions (% 12)
+  static const uint8_t mod12[24] = {
+    0,1,2,3,4,5,6,7,8,9,10,11,0,1,2,3,4,5,6,7,8,9,10,11
+  };
   int pos = (dsp->channel[ch].pitchCounter >> 12) + dsp->channel[ch].bufferOffset;
   int offset = (dsp->channel[ch].pitchCounter >> 4) & 0xff;
-  int16_t news = dsp->channel[ch].decodeBuffer[(pos + 3) % 12];
-  int16_t olds = dsp->channel[ch].decodeBuffer[(pos + 2) % 12];
-  int16_t olders = dsp->channel[ch].decodeBuffer[(pos + 1) % 12];
-  int16_t oldests = dsp->channel[ch].decodeBuffer[pos % 12];
+  int16_t news = dsp->channel[ch].decodeBuffer[mod12[pos + 3]];
+  int16_t olds = dsp->channel[ch].decodeBuffer[mod12[pos + 2]];
+  int16_t olders = dsp->channel[ch].decodeBuffer[mod12[pos + 1]];
+  int16_t oldests = dsp->channel[ch].decodeBuffer[mod12[pos]];
   int out = (gaussValues[0xff - offset] * oldests) >> 11;
   out += (gaussValues[0x1ff - offset] * olders) >> 11;
   out += (gaussValues[0x100 + offset] * olds) >> 11;

@@ -19,6 +19,7 @@ static const uint8_t bootRom[0x40] = {
 };
 
 static void apu_cycle(Apu* apu);
+static void apu_syncTimers(Apu* apu);
 
 Apu* apu_init(Snes* snes) {
   Apu* apu = malloc(sizeof(Apu));
@@ -44,6 +45,7 @@ void apu_reset(Apu* apu) {
   apu->cycles = 0;
   memset(apu->inPorts, 0, sizeof(apu->inPorts));
   memset(apu->outPorts, 0, sizeof(apu->outPorts));
+  apu->timersLastSync = 0;   // FF4 A1 (apu->cycles was just reset)
   for(int i = 0; i < 3; i++) {
     apu->timer[i].cycles = 0;
     apu->timer[i].divider = 0;
@@ -54,6 +56,7 @@ void apu_reset(Apu* apu) {
 }
 
 void apu_handleState(Apu* apu, StateHandler* sh) {
+  apu_syncTimers(apu);   // FF4 A1: saves serialize the exact materialized state
   sh_handleBools(sh, &apu->romReadable, NULL);
   sh_handleBytes(sh,
     &apu->dspAdr, &apu->inPorts[0], &apu->inPorts[1], &apu->inPorts[2], &apu->inPorts[3], &apu->inPorts[4],
@@ -65,6 +68,7 @@ void apu_handleState(Apu* apu, StateHandler* sh) {
     sh_handleBytes(sh, &apu->timer[i].cycles, &apu->timer[i].divider, &apu->timer[i].target, &apu->timer[i].counter, NULL);
   }
   sh_handleByteArray(sh, apu->ram, 0x10000);
+  apu->timersLastSync = apu->cycles;   // FF4 A1: loads resync the lazy clock
   // components
   spc_handleState(apu->spc, sh);
   dsp_handleState(apu->dsp, sh);
@@ -81,29 +85,51 @@ int apu_runCycles(Apu* apu, int wantedCycles) {
   return runCycles;
 }
 
+/* FF4 A1: lazy timers. The old apu_cycle ran the 3-timer countdown
+ * bookkeeping on EVERY SPC cycle (~17k times/frame) for counters the
+ * game reads a handful of times per frame ($FD-FF). The per-cycle loop
+ * was, per timer: on countdown==0, reload (16/128) and -- if enabled --
+ * divider++ with an 8-BIT EQUALITY test against target (so a target
+ * written below the current divider only fires after the divider wraps
+ * through 256), reset-and-count on hit, counter masked to 4 bits.
+ * apu_syncTimers reproduces that loop in closed form over any elapsed
+ * span; it is called before every observable access (counter reads,
+ * $F1 enable writes, $FA-FC target writes) and around savestates, so
+ * the serialized format and every read value are exactly those the
+ * per-cycle loop would have produced. */
+static void apu_syncTimers(Apu* apu) {
+  const uint32_t elapsed = apu->cycles - apu->timersLastSync;
+  if(elapsed == 0) return;
+  apu->timersLastSync = apu->cycles;
+  for(int i = 0; i < 3; i++) {
+    Timer* t = &apu->timer[i];
+    const uint32_t period = (i == 2) ? 16 : 128;
+    const uint32_t c = t->cycles;
+    // boundary hits: first when the countdown reaches 0 (c+1 cycles in),
+    // then every `period` -- identical to the per-cycle reload pattern
+    const uint32_t ticks = (elapsed + period - 1 - c) / period;
+    t->cycles = (uint8_t)((c + period - (elapsed % period)) % period);
+    if(ticks == 0 || !t->enabled) continue;
+    // 8-bit divider marches to an equality with target (wrap included)
+    const uint32_t tb = t->target;
+    const uint32_t Tp = tb ? tb : 256;
+    const uint32_t k1 = ((tb - (uint32_t)t->divider - 1) & 0xff) + 1;
+    if(ticks < k1) {
+      t->divider = (uint8_t)(t->divider + ticks);
+    } else {
+      const uint32_t fires = 1 + (ticks - k1) / Tp;
+      t->divider = (uint8_t)((ticks - k1) % Tp);
+      t->counter = (uint8_t)((t->counter + fires) & 0xf);
+    }
+  }
+}
+
 static void apu_cycle(Apu* apu) {
   if((apu->cycles & 0x1f) == 0) {
     // every 32 cycles
     dsp_cycle(apu->dsp);
   }
-
-  // handle timers
-  for(int i = 0; i < 3; i++) {
-    if(apu->timer[i].cycles == 0) {
-      apu->timer[i].cycles = i == 2 ? 16 : 128;
-      if(apu->timer[i].enabled) {
-        apu->timer[i].divider++;
-        if(apu->timer[i].divider == apu->timer[i].target) {
-          apu->timer[i].divider = 0;
-          apu->timer[i].counter++;
-          apu->timer[i].counter &= 0xf;
-        }
-      }
-    }
-    apu->timer[i].cycles--;
-  }
-
-  apu->cycles++;
+  apu->cycles++;   // timers are materialized lazily (apu_syncTimers)
 }
 
 uint8_t apu_read(Apu* apu, uint16_t adr) {
@@ -132,6 +158,7 @@ uint8_t apu_read(Apu* apu, uint16_t adr) {
     case 0xfd:
     case 0xfe:
     case 0xff: {
+      apu_syncTimers(apu);   // FF4 A1: materialize before the read
       uint8_t ret = apu->timer[adr - 0xfd].counter;
       apu->timer[adr - 0xfd].counter = 0;
       return ret;
@@ -149,6 +176,7 @@ void apu_write(Apu* apu, uint16_t adr, uint8_t val) {
       break; // test register
     }
     case 0xf1: {
+      apu_syncTimers(apu);   // FF4 A1: materialize before reconfiguring
       for(int i = 0; i < 3; i++) {
         if(!apu->timer[i].enabled && (val & (1 << i))) {
           apu->timer[i].divider = 0;
@@ -190,6 +218,7 @@ void apu_write(Apu* apu, uint16_t adr, uint8_t val) {
     case 0xfa:
     case 0xfb:
     case 0xfc: {
+      apu_syncTimers(apu);   // FF4 A1: the equality-march depends on the old target
       apu->timer[adr - 0xfa].target = val;
       break;
     }

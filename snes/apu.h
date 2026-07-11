@@ -19,6 +19,7 @@ typedef struct Timer {
   uint8_t counter;
   bool enabled;
 } Timer;
+// FF4 A1: timers are materialized lazily (see apu_syncTimers in apu.c)
 
 struct Apu {
   Snes* snes;
@@ -28,6 +29,7 @@ struct Apu {
   bool romReadable;
   uint8_t dspAdr;
   uint32_t cycles;
+  uint32_t timersLastSync; // FF4 A1: apu->cycles at the last timer materialization (not serialized; derived)
   uint8_t inPorts[6]; // includes 2 bytes of ram
   uint8_t outPorts[4];
   Timer timer[3];
