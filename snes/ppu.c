@@ -461,6 +461,15 @@ static FF4_LR_SCRATCH uint8_t  s_lrWin[6][256];     // window membership per win
  * contains (nothing ever writes it), and no reader observes it anyway:
  * the device blit, the PPM dump and --fb-crc all consume only the three
  * color bytes. */
+/* R10b: guaranteed-inline unaligned word store. gcc for the DEVICE emits
+ * memcpy(px, &word, 4) as a LIBC CALL (57k calls/frame -- ~3 ms, found by
+ * LR-sampling the flash memcpy bucket); the desktop compiler inlined it,
+ * which hid the regression until the D6R ring existed. The packed
+ * may_alias single-member struct forces one str (unaligned-capable on the
+ * M7) on both toolchains. */
+typedef struct { uint32_t v; } __attribute__((packed, may_alias)) PpuU32Store;
+#define PPU_STORE32(ptr, val) (((PpuU32Store*)(ptr))->v = (val))
+
 static FF4_LR_SCRATCH uint32_t s_lrPal4[256];
 static bool     s_lrPal4Valid;
 static uint32_t s_lrPal4Gen;
@@ -976,7 +985,7 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
     uint8_t *px = out;                    // R10: whole 4-byte cells (fmt baked in pal4)
     if(!sprLine7) {
       for(int x = 0; x < 256; x++) {
-        memcpy(px, &s_lrPal4[buf[x]], 4);
+        PPU_STORE32(px, s_lrPal4[buf[x]]);
         px += PPU_PIXELBUF_XPITCH;
       }
     } else {
@@ -1001,7 +1010,7 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
         const uint8_t ov = obx[x];
         if(ov && (!objWin || !s_m7Win[x]) && (obp[x] != 0 || pix == 0)) pix = ov;
         if(psStore7) buf[x] = pix;          // R5 store records the composed index
-        memcpy(px, &s_lrPal4[pix], 4);
+        PPU_STORE32(px, s_lrPal4[pix]);
         px += PPU_PIXELBUF_XPITCH;
       }
     }
@@ -1088,7 +1097,7 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
     for(int x = 0; x < 256; x++) {
       const uint8_t pi = (uint8_t)s_lrPix[0][x];
       if(psp) psp[x] = pi;
-      memcpy(px, &s_lrPal4[pi], 4);
+      PPU_STORE32(px, s_lrPal4[pi]);
       px += PPU_PIXELBUF_XPITCH;
     }
     if(psStore) memset(s_psFlg[row], 0, 128);
@@ -1193,7 +1202,7 @@ static void ppu_lrPaletteLine(Ppu* ppu, int y) {
   for(int x = 0; x < 256; x++) {
     const uint8_t f = (uint8_t)((flgL[x >> 1] >> ((x & 1) ? 4 : 0)) & 0x7);
     if(f == 0) {
-      memcpy(out + x * PPU_PIXELBUF_XPITCH, &s_lrPal4[pixL[x]], 4);   // R10
+      PPU_STORE32(out + x * PPU_PIXELBUF_XPITCH, s_lrPal4[pixL[x]]);   // R10/R10b
       continue;
     }
     uint8_t *px = out + x * PPU_PIXELBUF_XPITCH + ppu->pixelOutputFormat;
