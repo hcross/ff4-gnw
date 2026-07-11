@@ -467,8 +467,13 @@ static FF4_LR_SCRATCH uint8_t  s_lrWin[6][256];     // window membership per win
  * which hid the regression until the D6R ring existed. The packed
  * may_alias single-member struct forces one str (unaligned-capable on the
  * M7) on both toolchains. */
-typedef struct { uint32_t v; } __attribute__((packed, may_alias)) PpuU32Store;
-#define PPU_STORE32(ptr, val) (((PpuU32Store*)(ptr))->v = (val))
+/* R10c: the packed (unaligned) form still lowered to four strb on the
+ * device toolchain (-mno-unaligned-access build); every destination is in
+ * fact 4-aligned (pixelBuffer is aligned(4), STRIDE 1024 and XPITCH 4 are
+ * multiples of 4), so an ALIGNED may_alias word store gives the single str
+ * the whole exercise was about. */
+typedef uint32_t __attribute__((may_alias)) PpuU32Alias;
+#define PPU_STORE32(ptr, val) (*(PpuU32Alias*)(ptr) = (val))
 
 static FF4_LR_SCRATCH uint32_t s_lrPal4[256];
 static bool     s_lrPal4Valid;

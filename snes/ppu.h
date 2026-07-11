@@ -161,10 +161,10 @@ struct Ppu {
    * `frameOverscan ? 239 : 224` — FF4 sets frameOverscan=false so 224
    * rows are sufficient. Indexing goes through PPU_PIXELBUF_STRIDE /
    * PPU_PIXELBUF_XPITCH (ppu.c, main.c) — keep them in sync. */
-  uint8_t pixelBuffer[256 * 4 * 224];
+  uint8_t pixelBuffer[256 * 4 * 224] __attribute__((aligned(4))); // R10c: word-store output path
 #else
   // times 2 for even and odd frame
-  uint8_t pixelBuffer[512 * 4 * 239 * 2];
+  uint8_t pixelBuffer[512 * 4 * 239 * 2] __attribute__((aligned(4))); // R10c
 #endif
   uint8_t pixelOutputFormat;
 };
