@@ -753,6 +753,32 @@ static void ppu_lrDecodeM7Line(Ppu* ppu, int layer, int y) {
   }
 }
 
+/* R8: apply layer-l's main-screen window mask to a decoded u8 line --
+ * masked pixels drop to index 0 (backdrop; the fused output then writes
+ * s_lrPal3[0] = the cgram[0] color, exactly what the compose pass yields
+ * for a window-masked pixel). Same membership evaluation and span
+ * structure as the s_lrWin build in ppu_lrRunLine: membership is
+ * piecewise-constant between window edges. FF4 worldmap concretely: an
+ * inverted window1 [1,254] on layer 0 masking only columns 0 and 255
+ * (the classic mode-7 edge-artifact hide). */
+static void ppu_lrWinMaskU8(Ppu* ppu, int l, uint8_t *buf) {
+  if(!ppu->windowLayer[l].window1enabled && !ppu->windowLayer[l].window2enabled) return;
+  int winBp[6] = {0, ppu->window1left, ppu->window1right + 1,
+                  ppu->window2left, ppu->window2right + 1, 256};
+  for(int i = 1; i < 6; i++) {           // insertion sort, 6 entries
+    int v = winBp[i], j = i;
+    while(j > 0 && winBp[j-1] > v) { winBp[j] = winBp[j-1]; j--; }
+    winBp[j] = v;
+  }
+  for(int i = 0; i < 5; i++) {
+    const int s = winBp[i];
+    int e = winBp[i + 1];
+    if(e > 256) e = 256;
+    if(s >= e) continue;
+    if(ppu_getWindowState(ppu, l, s)) memset(&buf[s], 0, e - s);
+  }
+}
+
 static void ppu_lrComposeLine(Ppu* ppu, int actMode, bool sub, const bool *bgDecoded) {
   uint16_t *outPix   = s_lrPix[sub ? 1 : 0];
   uint8_t  *outLayer = s_lrLayer[sub ? 1 : 0];
@@ -847,11 +873,12 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
      && !(ppu->mathEnabled[0] || ppu->mathEnabled[1] || ppu->mathEnabled[2]
        || ppu->mathEnabled[3] || ppu->mathEnabled[4] || ppu->mathEnabled[5])
      && ppu->clipMode == 0 && !ppu->directColor
-     && ppu->layer[0].mainScreenEnabled && !ppu->layer[0].mainScreenWindowed) {
+     && ppu->layer[0].mainScreenEnabled) {
     ppu_lrRefreshPal3(ppu, ppu_lrBright(ppu));
     const bool psStore7 = ppu->psStoring;
     uint8_t *buf = psStore7 ? s_psPix[row] : s_m7Line;  // decode into the R5 store directly
     ppu_m7DecodeLineU8(ppu, buf);
+    if(ppu->layer[0].mainScreenWindowed) ppu_lrWinMaskU8(ppu, 0, buf);
     uint8_t *px = out + ppu->pixelOutputFormat;
     for(int x = 0; x < 256; x++) {
       const uint8_t *c3 = s_lrPal3[buf[x]];
@@ -859,8 +886,20 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
       px += PPU_PIXELBUF_XPITCH;
     }
     if(psStore7) memset(s_psFlg[row], 0, 128);
+#ifdef FF4_M7_CENSUS
+    { static uint32_t f; if((++f % 10000) == 1) fprintf(stderr, "R8FUSED %u\n", f); }
+#endif
     return;
   }
+#ifdef FF4_M7_CENSUS
+  if(actMode == 7) { static uint32_t g; if((++g % 2000) == 1) fprintf(stderr,
+    "R8GENERAL %u spr=%d mathAny=%d clip=%d dc=%d mainEn=%d mainWin=%d win1=%d l=%d r=%d inv=%d\n", g,
+    (int)s_lrSpritesAny,
+    (int)(ppu->mathEnabled[0]||ppu->mathEnabled[1]||ppu->mathEnabled[2]||ppu->mathEnabled[3]||ppu->mathEnabled[4]||ppu->mathEnabled[5]),
+    ppu->clipMode, (int)ppu->directColor, (int)ppu->layer[0].mainScreenEnabled,
+    (int)ppu->layer[0].mainScreenWindowed, (int)ppu->windowLayer[0].window1enabled,
+    ppu->window1left, ppu->window1right, (int)ppu->windowLayer[0].window1inversed); }
+#endif
 
   // window membership per window-layer (cheap when both windows disabled).
   // Membership is piecewise-constant in x: whatever the enable/invert/mask
