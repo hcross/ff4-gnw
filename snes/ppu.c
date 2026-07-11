@@ -67,6 +67,7 @@ static uint16_t ppu_getOffsetValue(Ppu* ppu, int col, int row);
 static int ppu_getPixelForBgLayer(Ppu* ppu, int x, int y, int layer, bool priority);
 static void ppu_handleOPT(Ppu* ppu, int layer, int* lx, int* ly);
 static void ppu_calculateMode7Starts(Ppu* ppu, int y);
+static void ppu_objInvalidateLineMap(void);   // R9
 static int ppu_getPixelForMode7(Ppu* ppu, int x, int layer, bool priority);
 static bool ppu_getWindowState(Ppu* ppu, int layer, int x);
 static void ppu_evaluateSprites(Ppu* ppu, int line);
@@ -99,6 +100,7 @@ void ppu_free(Ppu* ppu) {
 }
 
 void ppu_reset(Ppu* ppu) {
+  ppu_objInvalidateLineMap();   // R9
   memset(ppu->vram, 0, sizeof(ppu->vram));
   ppu->vramGen++; // invalidate the decoded-tile-row cache (R2b)
   ppu->vramPointer = 0;
@@ -207,6 +209,7 @@ void ppu_reset(Ppu* ppu) {
 }
 
 void ppu_handleState(Ppu* ppu, StateHandler* sh) {
+  ppu_objInvalidateLineMap();   // R9: OAM and buffer content are about to be replaced
   sh_handleBools(sh,
     &ppu->vramIncrementOnHigh, &ppu->cgramSecondWrite, &ppu->oamInHigh, &ppu->oamInHighWritten, &ppu->oamSecondWrite,
     &ppu->objPriority, &ppu->timeOver, &ppu->rangeOver, &ppu->objInterlace, &ppu->m7largeField, &ppu->m7charFill,
@@ -767,6 +770,47 @@ static void ppu_lrDecodeM7Line(Ppu* ppu, int layer, int y) {
  * piecewise-constant between window edges. FF4 worldmap concretely: an
  * inverted window1 [1,254] on layer 0 masking only columns 0 and 255
  * (the classic mode-7 edge-artifact hide). */
+/* R9: per-frame sprite line-coverage map. ppu_evaluateSprites scans all
+ * 128 OAM entries on EVERY line (224x/frame) just to find which sprites
+ * are in y-range -- on sprite-sparse scenes (worldmap: ~80% of lines
+ * carry none) that scan plus the objPixelBuffer memset is pure waste.
+ * This 256-bit map answers "does ANY sprite cover line L" with the exact
+ * same membership formula the scan uses ((uint8_t)(line - y) < height),
+ * so an uncovered line provably makes the original scan a no-op: no
+ * pixels written, no range/time-over flags touched, buffer left zero.
+ * Covered lines run the ORIGINAL evaluator unchanged (order, 32-sprite
+ * and 34-tile limits, $213E flags: all exact by construction).
+ * Invalidated by every input the formula reads: OAM writes, high-OAM
+ * writes, OBSEL ($2101) size changes, SETINI ($2133) obj-interlace,
+ * reset and savestate load. s_objBufClean additionally remembers that
+ * objPixelBuffer is already all-zero so uncovered lines skip the memset
+ * too (cleared on load: a loaded state carries its own buffer content).
+ * Plain BSS, NOT DTCM: .ff4_dtcm sits 16 bytes from its LD boundary. */
+static uint8_t s_objLineMap[32];
+static bool s_objMapValid;    // zeroed BSS: starts invalid, rebuilt lazily
+static bool s_objBufClean;
+
+static void ppu_objInvalidateLineMap(void) {
+  s_objMapValid = false;
+  s_objBufClean = false;
+}
+
+static void ppu_objRebuildLineMap(Ppu* ppu) {
+  memset(s_objLineMap, 0, sizeof(s_objLineMap));
+  // OAM holds two words per sprite: entries live at EVEN word indices
+  // (the evaluator walks index += 2 with uint8 wrap) -- same layout here
+  for(int index = 0; index < 256; index += 2) {
+    const uint8_t y = ppu->oam[index] >> 8;
+    const int spriteSize = spriteSizes[ppu->objSize][(ppu->highOam[index >> 3] >> ((index & 7) + 1)) & 1];
+    const int h = ppu->objInterlace ? spriteSize / 2 : spriteSize;
+    for(int r = 0; r < h; r++) {
+      const uint8_t l = (uint8_t)(y + r);
+      s_objLineMap[l >> 3] |= (uint8_t)(1u << (l & 7));
+    }
+  }
+  s_objMapValid = true;
+}
+
 /* R8b: build layer-l's window membership as a 0/1 mask line (same span
  * evaluation as ppu_lrWinMaskU8 / the s_lrWin build; 1 = masked off the
  * main screen). Used for the sprite layer in the fused mode-7 path,
@@ -1197,9 +1241,21 @@ static bool ppu_lrFastPathOk(Ppu* ppu) {
 
 void ppu_runLine(Ppu* ppu, int line) {
   // called for lines 1-224/239
-  // evaluate sprites
-  memset(ppu->objPixelBuffer, 0, sizeof(ppu->objPixelBuffer));
-  if(!ppu->forcedBlank) ppu_evaluateSprites(ppu, line - 1);
+  // evaluate sprites -- only on lines the coverage map proves non-empty (R9)
+  bool evalNeeded = !ppu->forcedBlank;
+  if(evalNeeded) {
+    if(!s_objMapValid) ppu_objRebuildLineMap(ppu);
+    const uint8_t l = (uint8_t)(line - 1);
+    evalNeeded = (s_objLineMap[l >> 3] >> (l & 7)) & 1;
+  }
+  if(evalNeeded) {
+    memset(ppu->objPixelBuffer, 0, sizeof(ppu->objPixelBuffer));
+    s_objBufClean = false;                 // the evaluator may write pixels
+    ppu_evaluateSprites(ppu, line - 1);
+  } else if(!s_objBufClean) {
+    memset(ppu->objPixelBuffer, 0, sizeof(ppu->objPixelBuffer));
+    s_objBufClean = true;
+  }
   /* Frameskip (see ppu.h): sprite evaluation above stays -- its
    * range/time-over flags are game-visible via $213E -- but everything
    * below only feeds pixelBuffer, so a skipped frame bails out here. */
@@ -1804,6 +1860,7 @@ void ppu_write(Ppu* ppu, uint8_t adr, uint8_t val) {
     }
     case 0x01: {
       ppu->objSize = val >> 5;
+      ppu_objInvalidateLineMap();   // R9: sprite heights changed
       ppu->objTileAdr1 = (val & 7) << 13;
       ppu->objTileAdr2 = ppu->objTileAdr1 + (((val & 0x18) + 8) << 9);
       break;
@@ -1826,6 +1883,7 @@ void ppu_write(Ppu* ppu, uint8_t adr, uint8_t val) {
     case 0x04: {
       if(ppu->oamInHigh) {
         ppu->highOam[((ppu->oamAdr & 0xf) << 1) | ppu->oamSecondWrite] = val;
+        ppu_objInvalidateLineMap();   // R9: size-select bits changed
         if(ppu->oamSecondWrite) {
           ppu->oamAdr++;
           if(ppu->oamAdr == 0) ppu->oamInHigh = false;
@@ -1835,6 +1893,7 @@ void ppu_write(Ppu* ppu, uint8_t adr, uint8_t val) {
           ppu->oamBuffer = val;
         } else {
           ppu->oam[ppu->oamAdr++] = (val << 8) | ppu->oamBuffer;
+          ppu_objInvalidateLineMap();   // R9: sprite y (high byte) may have changed
           if(ppu->oamAdr == 0) ppu->oamInHigh = true;
         }
       }
@@ -2074,6 +2133,7 @@ void ppu_write(Ppu* ppu, uint8_t adr, uint8_t val) {
     case 0x33: {
       ppu->interlace = val & 0x1;
       ppu->objInterlace = val & 0x2;
+      ppu_objInvalidateLineMap();   // R9: effective heights halved/restored
       ppu->overscan = val & 0x4;
       ppu->pseudoHires = val & 0x8;
       ppu->m7extBg = val & 0x40;
