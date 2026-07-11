@@ -607,6 +607,59 @@ static void ppu_lrDecodeBgLine(Ppu* ppu, int layer, int y) {
   }
 }
 
+/* R7: mode-7 line decode. Exact ppu_getPixelForMode7 math per pixel, with
+ * the per-line m7startX/m7startY already computed by ppu_calculateMode7Starts
+ * (which also owns the VERTICAL mosaic adjustment, keyed on layer 0's
+ * mosaicEnabled exactly like the legacy path). The affine walk is inherently
+ * per-pixel, so unlike the tile-span decoder above there is no span
+ * structure to exploit -- the win over the legacy path is the same as for
+ * the other layers: decode once into line buffers and let the hoisted
+ * compose/output stages replace the per-pixel call pipeline.
+ *
+ * layer 0 = the mode-7 BG: full 8-bit pixel, painted at the single priority
+ * slot the mode-7 rows of layersPerMode give it. layer 1 = EXTBG (actMode
+ * 9): the pixel's bit 7 is its priority, low 7 bits the color index -- the
+ * legacy helper returns 0 on a priority mismatch, which maps here to
+ * storing (val = low 7 bits, prio = bit 7) and letting the compose pass
+ * match on prio: a 0x80 pixel becomes val 0 at prio 1 = transparent, same
+ * outcome. Horizontal mosaic is the legacy `lx -= lx % size` applied before
+ * the affine math, per layer. */
+static void ppu_lrDecodeM7Line(Ppu* ppu, int layer, int y) {
+  (void)y;   // vertical position is baked into m7startX/Y
+  const int mosSize = (ppu->bgLayer[layer].mosaicEnabled && ppu->mosaicSize > 1)
+    ? ppu->mosaicSize : 1;
+  uint16_t *val = s_lrVal[layer];
+  uint8_t  *prio = s_lrPrio[layer];
+  uint8_t hasPrio0 = 0, hasPrio1 = 0;
+  for(int x = 0; x < 256; x++) {
+    int lx = x;
+    if(mosSize > 1) lx -= lx % mosSize;
+    const uint8_t rx = ppu->m7xFlip ? 255 - lx : lx;
+    int xPos = (ppu->m7startX + ppu->m7matrix[0] * rx) >> 8;
+    int yPos = (ppu->m7startY + ppu->m7matrix[2] * rx) >> 8;
+    bool outsideMap = xPos < 0 || xPos >= 1024 || yPos < 0 || yPos >= 1024;
+    xPos &= 0x3ff;
+    yPos &= 0x3ff;
+    if(!ppu->m7largeField) outsideMap = false;
+    const uint8_t tile = outsideMap ? 0 : ppu->vram[(yPos >> 3) * 128 + (xPos >> 3)] & 0xff;
+    const uint8_t pixel = (outsideMap && !ppu->m7charFill) ? 0
+      : ppu->vram[tile * 64 + (yPos & 7) * 8 + (xPos & 7)] >> 8;
+    if(layer == 1) {
+      const uint8_t p = (pixel & 0x80) ? 1 : 0;
+      const uint16_t v = pixel & 0x7f;
+      val[x] = v;
+      prio[x] = p;
+      if(v) { if(p) hasPrio1 = 1; else hasPrio0 = 1; }
+    } else {
+      val[x] = pixel;
+      prio[x] = 0;
+      if(pixel) hasPrio0 = 1;
+    }
+  }
+  if(hasPrio0) s_lrHasPrio[layer][0] = 1;
+  if(hasPrio1) s_lrHasPrio[layer][1] = 1;
+}
+
 static void ppu_lrComposeLine(Ppu* ppu, int actMode, bool sub, const bool *bgDecoded) {
   uint16_t *outPix   = s_lrPix[sub ? 1 : 0];
   uint8_t  *outLayer = s_lrLayer[sub ? 1 : 0];
@@ -662,6 +715,12 @@ static void ppu_lrComposeLine(Ppu* ppu, int actMode, bool sub, const bool *bgDec
 }
 
 static void ppu_lrRunLine(Ppu* ppu, int y) {
+  // R7: per-line mode-7 starts, BEFORE the row clamp and the forced-blank
+  // bail so the m7startX/Y state evolves exactly as on the legacy path
+  // (which computes them on blanked lines AND on the clamped vblank-edge
+  // line 225, before its per-pixel F9 clamp) -- they are savestate-persisted
+  // and hashed into the R4/R5 render signature.
+  if(ppu->mode == 7) ppu_calculateMode7Starts(ppu, y);
   const int row = y - 1;                          // evenFrame path (see ppu_lrFastPathOk)
 #ifdef FF4_PORT_STATIC_SNES
   if(row < 0 || row >= 224) return;               // same clamp as ppu_handlePixel (F9)
@@ -672,7 +731,8 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
     memset(out, 0, 256 * PPU_PIXELBUF_XPITCH);
     return;
   }
-  const int actMode = (ppu->mode == 1 && ppu->bg3priority) ? 8 : ppu->mode;
+  const int actMode = (ppu->mode == 1 && ppu->bg3priority) ? 8
+                    : (ppu->mode == 7 && ppu->m7extBg)     ? 9 : ppu->mode;
 
   // window membership per window-layer (cheap when both windows disabled).
   // Membership is piecewise-constant in x: whatever the enable/invert/mask
@@ -707,7 +767,8 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
     if(l >= 4 || bgDecoded[l]) continue;
     if(ppu->layer[l].mainScreenEnabled || ppu->layer[l].subScreenEnabled) {
       s_lrHasPrio[l][0] = s_lrHasPrio[l][1] = 0;
-      ppu_lrDecodeBgLine(ppu, l, y);
+      if(ppu->mode == 7) ppu_lrDecodeM7Line(ppu, l, y);
+      else ppu_lrDecodeBgLine(ppu, l, y);
       bgDecoded[l] = true;
     }
   }
@@ -894,7 +955,16 @@ static void ppu_lrPaletteLine(Ppu* ppu, int y) {
 }
 
 static bool ppu_lrFastPathOk(Ppu* ppu) {
-  if(ppu->mode != 0 && ppu->mode != 1 && ppu->mode != 3) return false;
+  // mode 7 handled since 2026-07-11 (R7): the airship/worldmap scenes used
+  // to be the last legacy-renderer scenes -- measured at ~53% of the M7
+  // frame in ppu_runLine (D6 + PC-sampling profile, 2026-07-11).
+  if(ppu->mode != 0 && ppu->mode != 1 && ppu->mode != 3 && ppu->mode != 7) return false;
+  // EXTBG (mode 7 + $2133 bit 6) stays on the legacy path: the lr decoder
+  // implements it (layer 1 branch of ppu_lrDecodeM7Line, actMode 9) but NO
+  // fixture exercises it (instrumented sweep 2026-07-11: zero actMode-9
+  // lines across 008/011/012), so it ships unreachable rather than
+  // unvalidated. Lift this gate the day a scene provides golden coverage.
+  if(ppu->mode == 7 && ppu->m7extBg) return false;
   if(ppu->pseudoHires || ppu->interlace) return false;
   // mosaic is line-renderer-friendly (base row + horizontal block
   // replication in the decoder) and handled since 2026-07-10 -- it used to
