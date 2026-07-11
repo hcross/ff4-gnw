@@ -82,6 +82,7 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x00aad8, SetPlayerNPCMap_c },  /* field */
     { 0x00ab13, ClearPlayerNPCMap_c },  /* field */
     { 0x00ac7d, CheckVehicleBlock_c },  /* field */
+    { 0x00bb6a, DrawNpcs_c },  /* field — draw all NPC + party sprites into the OAM shadow; entry is $BB6A not $BB68 (disasm off-by-2, 7th instance; all 6 callers are 20 6A BB) */
     { 0x00be47, CalcVehicleSpritePos_c },  /* field */
     { 0x00bdb2, CalcObjScreenPos_c },  /* field — on-screen object position; entry is $BDB2 not $BDB0 (disasm off-by-2) */
     { 0x00c0c4, PlayerSpriteTiles_c },  /* field */
