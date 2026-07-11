@@ -79,6 +79,8 @@ void snes_syncCycles(Snes* snes, bool start, int syncCycles);
 uint8_t snes_readBBus(Snes* snes, uint8_t adr);
 void snes_writeBBus(Snes* snes, uint8_t adr, uint8_t val);
 uint8_t snes_read(Snes* snes, uint32_t adr);
+// FF4 M2: wait-spin fast-forward (called from cpu_doBranch on taken -4 branches)
+void snes_ff4SpinFastForward(void* snes);
 void snes_write(Snes* snes, uint32_t adr, uint8_t val);
 void snes_cpuIdle(void* mem, bool waiting);
 uint8_t snes_cpuRead(void* mem, uint32_t adr);

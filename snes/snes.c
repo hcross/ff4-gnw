@@ -382,6 +382,164 @@ void snes_runCycles(Snes* snes, int cycles) {
   }
 }
 
+/* ==================== FF4 M2: wait-spin fast-forward ====================
+ *
+ * FF4 parks the CPU in 2-instruction wait loops (`lda dp / bne -4`;
+ * $00:9131 and $00:9140 drive the worldmap WaitVblank) for most of every
+ * frame: a PC histogram on 008-overworld-mode7 measured 67% of ALL
+ * interpreted opcodes inside these two loops. The loop body reads one
+ * WRAM byte and writes nothing, so it can only exit through an interrupt
+ * handler's side effect: while no interrupt fires, every iteration leaves
+ * the CPU in an identical state at an identical loop-head boundary.
+ *
+ * Fast-forward: from the taken-branch boundary, advance the CLOCK ONLY
+ * (snes_runCycles: PPU line events, APU debt and the autojoy timer all
+ * march exactly as they would under the interpreted spin) by whole
+ * iterations, stopping a safe margin before the frame's NMI-set tick;
+ * the interpreter then executes the remaining real iterations, so the
+ * NMI fires, vectors and returns exactly as in an un-skipped run.
+ * Byte-identical by construction: both runs pass through identical
+ * (state, cycle) points at every iteration boundary.
+ *
+ * Gates -- ALL must hold, else the spin stays interpreted:
+ *  - loop head in bank-0 ROM, bytes verified `A5 nn D0/F0 FC` (any
+ *    such loop can only exit via an interrupt: nothing but the CPU
+ *    writes WRAM);
+ *  - two consecutive iterations measured with identical CPU state and
+ *    identical cycle cost (self-calibrating; a DRAM-refresh-inflated
+ *    sample can't repeat twice in a row, so it never arms wrong);
+ *  - no interrupt pending, NMI enabled, H/V-IRQ disabled;
+ *  - not in vblank, so the next NMI-set tick is this frame's vblank
+ *    start -- a pure function of (hPos, vPos): every line in
+ *    [vPos, nmiLine) is 1364 master cycles in both NTSC and PAL (the
+ *    short/long-line quirks live at v==240/311, outside this window);
+ *  - no DMA pending and no HDMA channel active: pending HDMA work is
+ *    drained by the CPU ACCESS path (snes_cpuRead/Write/Idle), which
+ *    the skip bypasses. FF4's worldmap arms no HDMA; scenes that do
+ *    simply keep the interpreted spin.
+ *
+ * Chunking: each snes_runCycles call is capped under one scanline so
+ * the +40 DRAM-refresh adjustment (applied per call when crossing
+ * hPos 536) is taken exactly once per crossing, as interpreted
+ * execution takes it exactly once per line. */
+typedef struct {
+  uint32_t head;        // 16-bit pc of the loop head (bank 0), 0 = none
+  uint64_t lastCycles;  // snes->cycles at the previous head visit
+  uint32_t lastDelta;   // previous iteration's cycle cost (calibration)
+  uint32_t ic;          // confirmed cycles per iteration (0 = not armed)
+  uint16_t sA, sX, sY, sSp, sDp;
+  uint8_t  sDb, sFlags, sE;
+  bool     verified;    // byte pattern checked for this head
+} Ff4SpinState;
+static Ff4SpinState s_ff4Spin;
+
+static uint8_t spin_flagsByte(Cpu* c) {
+  return (uint8_t)(((c->n != 0) << 7) | ((c->v != 0) << 6) | ((c->mf != 0) << 5)
+       | ((c->xf != 0) << 4) | ((c->d != 0) << 3) | ((c->i != 0) << 2)
+       | ((c->z != 0) << 1) | (c->c != 0));
+}
+
+static void spin_snapshot(Ff4SpinState* s, Cpu* cpu) {
+  s->sA = cpu->a; s->sX = cpu->x; s->sY = cpu->y; s->sSp = cpu->sp;
+  s->sDp = cpu->dp; s->sDb = cpu->db; s->sFlags = spin_flagsByte(cpu);
+  s->sE = (uint8_t)cpu->e;
+}
+
+void snes_ff4SpinFastForward(void* snesv) {
+  Snes* snes = (Snes*)snesv;
+  Cpu* cpu = snes->cpu;
+  Ff4SpinState* s = &s_ff4Spin;
+  const uint32_t head = cpu->pc;               // branch target == loop head
+  if(cpu->k != 0 || head < 0x8000) { s->head = 0; s->ic = 0; return; }
+  if(head != s->head) {
+    // first sighting of this head: verify the pattern once, start measuring
+    s->head = head;
+    s->ic = 0;
+    s->lastDelta = 0;
+    s->verified =
+      snes_read(snes, head) == 0xA5 &&
+      (snes_read(snes, head + 2) == 0xD0 || snes_read(snes, head + 2) == 0xF0) &&
+      snes_read(snes, head + 3) == 0xFC;
+    s->lastCycles = snes->cycles;
+    spin_snapshot(s, cpu);
+    return;
+  }
+  if(!s->verified) return;
+  const uint64_t delta64 = snes->cycles - s->lastCycles;
+  s->lastCycles = snes->cycles;
+  const bool sameState = cpu->a == s->sA && cpu->x == s->sX && cpu->y == s->sY
+    && cpu->sp == s->sSp && cpu->dp == s->sDp && cpu->db == s->sDb
+    && spin_flagsByte(cpu) == s->sFlags && (uint8_t)cpu->e == s->sE;
+  if(!sameState) {                             // context changed: recalibrate
+    s->ic = 0;
+    s->lastDelta = 0;
+    spin_snapshot(s, cpu);
+    return;
+  }
+  if(s->ic == 0) {
+    const uint32_t delta = (delta64 < 256) ? (uint32_t)delta64 : 0;
+    if(delta != 0 && delta == s->lastDelta) s->ic = delta;
+    else { s->lastDelta = delta; return; }
+  }
+  // ---- environment gates ----
+#ifdef FF4_SPIN_DIAG
+  { static uint32_t n[8]; int g = -1;
+    if(cpu->nmiWanted || cpu->irqWanted || cpu->intWanted) g = 0;
+    else if(!snes->nmiEnabled) g = 1;
+    else if(snes->hIrqEnabled || snes->vIrqEnabled) g = 2;
+    else if(snes->inVblank) g = 3;
+    else if(snes->dma->pending) g = 4;
+    else { for(int i = 0; i < 8; i++) if(snes->dma->channel[i].hdmaActive) { g = 5; break; } }
+    if(g < 0) g = 6;
+    if((++n[g] % 20000) == 1)
+      fprintf(stderr, "SPINGATE head=%04X gate=%d count=%u vPos=%d\n", head, g, n[g], snes->vPos);
+  }
+#endif
+  if(cpu->nmiWanted || cpu->irqWanted || cpu->intWanted || cpu->waiting) return;
+  if(!snes->nmiEnabled || snes->hIrqEnabled || snes->vIrqEnabled) return;
+  if(snes->inVblank) return;
+  if(snes->dma->pending) return;
+  // HDMA channels active do NOT block the skip outright: the skip horizon
+  // is bounded to stop short of the next h==1104 arming tick, so the
+  // iteration that crosses it -- and therefore the drain, the 8-cycle
+  // sync and the transfer itself -- runs fully interpreted at the exact
+  // access cadence. The skip resumes on the next taken branch, giving
+  // per-line skips under HDMA instead of none. (The worldmap spin at
+  // $00:9133 runs with HDMA armed; the no-HDMA fast case keeps whole
+  // active-frame skips.)
+  bool anyHdma = false;
+  for(int i = 0; i < 8; i++) if(snes->dma->channel[i].hdmaActive) { anyHdma = true; break; }
+  if(anyHdma && snes->vPos == 0) return;       // hdmaInit arms at (h==16, v==0)
+  // ---- master cycles until the tick that starts at (h==0, v==nmiLine) ----
+  const int nmiLine = ppu_checkOverscan(snes->ppu) ? 240 : 225;
+  if(snes->vPos >= nmiLine) return;            // paranoia; inVblank covers it
+  uint64_t remaining = (uint64_t)(1364 - snes->hPos)
+                     + (uint64_t)(nmiLine - snes->vPos - 1) * 1364;
+  if(anyHdma) {
+    // the arming event is owed by the tick that STARTS at h==1104: at
+    // exactly 1104 it has NOT run yet (runCycles processes it on entry
+    // of the next call), so the distance there is 0, not a full line
+    const uint32_t dist1104 = (snes->hPos <= 1104)
+      ? (uint32_t)(1104 - snes->hPos)
+      : (uint32_t)(1364 - snes->hPos) + 1104;
+    if((uint64_t)dist1104 < remaining) remaining = dist1104;
+  }
+  const uint32_t ic = s->ic;
+  const uint64_t margin = (uint64_t)ic * 4 + 64;
+  while(remaining > margin + ic) {
+    // whole iterations, capped under one scanline (see the DRAM-refresh
+    // note above) and under the remaining budget to the horizon
+    uint64_t budget = remaining - margin;
+    uint32_t chunk = (budget > 1300) ? 1300 : (uint32_t)budget;
+    chunk = (chunk / ic) * ic;
+    if(chunk == 0) break;
+    const uint64_t c0 = snes->cycles;
+    snes_runCycles(snes, (int)chunk);
+    remaining -= (snes->cycles - c0);
+  }
+  s->lastCycles = snes->cycles;                // keep the next delta == ic
+}
+
 void snes_syncCycles(Snes* snes, bool start, int syncCycles) {
   if(start) {
     snes->syncCycle = snes->cycles;

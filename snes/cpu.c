@@ -32,6 +32,9 @@ static uint8_t cpu_getFlags(Cpu* cpu);
 static void cpu_setFlags(Cpu* cpu, uint8_t value);
 static void cpu_setZN(Cpu* cpu, uint16_t value, bool byte);
 static void cpu_doBranch(Cpu* cpu, bool check);
+#ifndef FF4_NO_SPIN_FF
+void snes_ff4SpinFastForward(void* snes);   // snes.c (FF4 M2)
+#endif
 static uint8_t cpu_pullByte(Cpu* cpu);
 static void cpu_pushByte(Cpu* cpu, uint8_t value);
 static uint16_t cpu_pullWord(Cpu* cpu, bool intCheck);
@@ -93,7 +96,37 @@ void cpu_handleState(Cpu* cpu, StateHandler* sh) {
   sh_handleWords(sh, &cpu->a, &cpu->x, &cpu->y, &cpu->sp, &cpu->pc, &cpu->dp, NULL);
 }
 
+#ifdef FF4_PC_PROFILE
+/* Desktop-only opcode-count histogram per 24-bit PC -- a time proxy for
+ * the interpreter (each interpreted opcode has near-constant host cost).
+ * Used to locate spin loops / hot interpreted code. Never built for the
+ * device (define is set only by ad-hoc desktop builds). */
+#include <stdlib.h>
+static uint32_t *s_pcProf;
+static uint64_t s_pcProfTotal;
+static int pcprof_cmp(const void *a, const void *b) {
+  const uint32_t ca = s_pcProf[*(const uint32_t*)a], cb = s_pcProf[*(const uint32_t*)b];
+  return (ca < cb) - (ca > cb);
+}
+static void pcprof_dump(void) {
+  uint32_t *idx = malloc((1u << 24) * 4);
+  uint32_t n = 0;
+  for(uint32_t i = 0; i < (1u << 24); i++) if(s_pcProf[i]) idx[n++] = i;
+  qsort(idx, n, 4, pcprof_cmp);
+  fprintf(stderr, "PCPROF total=%llu distinct=%u\n", (unsigned long long)s_pcProfTotal, n);
+  for(uint32_t i = 0; i < n && i < 40; i++)
+    fprintf(stderr, "PCPROF %02X:%04X %u %.2f%%\n", idx[i] >> 16, idx[i] & 0xFFFF,
+            s_pcProf[idx[i]], 100.0 * s_pcProf[idx[i]] / (double)s_pcProfTotal);
+  free(idx);
+}
+#endif
+
 void cpu_runOpcode(Cpu* cpu) {
+#ifdef FF4_PC_PROFILE
+  if(!s_pcProf) { s_pcProf = calloc(1u << 24, 4); atexit(pcprof_dump); }
+  s_pcProf[((uint32_t)cpu->k << 16) | cpu->pc]++;
+  s_pcProfTotal++;
+#endif
   if(cpu->resetWanted) {
     cpu->resetWanted = false;
     // reset: brk/interrupt without writes
@@ -224,6 +257,12 @@ static void cpu_doBranch(Cpu* cpu, bool check) {
     cpu_checkInt(cpu);
     cpu_idle(cpu); // taken branch: 1 extra cycle
     cpu->pc += (int8_t) value;
+#ifndef FF4_NO_SPIN_FF
+    /* FF4 M2: a taken branch with offset -4 is the shape of the game's
+     * 2-instruction wait spins -- hand the boundary to the fast-forward
+     * (which verifies the exact pattern and every safety gate itself). */
+    if(value == 0xfc) snes_ff4SpinFastForward(cpu->mem);
+#endif
   }
 }
 
