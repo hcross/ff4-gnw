@@ -883,20 +883,11 @@ static void ppu_lrWinMaskU8(Ppu* ppu, int l, uint8_t *buf) {
   }
 }
 
-/* R12: the composed LAYER-ID line is only ever read by the math/clip/
- * direct-color output stage; when the whole-line fast output path will be
- * taken (no math, clip 0, no dc -- knowable from pure flags before compose,
- * and ALWAYS true on the field/worldmap scenes measured), every outLayer
- * memset and per-opaque-pixel store is dead work. The impl below is
- * force-inlined into two thin wrappers with storeLayer constant, so the
- * compiler folds the branches away -- one source, two specialized bodies. */
-static inline __attribute__((always_inline))
-void ppu_lrComposeLineImpl(Ppu* ppu, int actMode, bool sub, const bool *bgDecoded,
-                           const bool storeLayer) {
+static void ppu_lrComposeLine(Ppu* ppu, int actMode, bool sub, const bool *bgDecoded) {
   uint16_t *outPix   = s_lrPix[sub ? 1 : 0];
   uint8_t  *outLayer = s_lrLayer[sub ? 1 : 0];
   memset(outPix, 0, 256 * sizeof(uint16_t));
-  if(storeLayer) memset(outLayer, 5, 256);        // backdrop
+  memset(outLayer, 5, 256);                       // backdrop
   for(int i = layerCountPerMode[actMode] - 1; i >= 0; i--) {
     const int curLayer = layersPerMode[actMode][i];
     const int curPriority = prioritysPerMode[actMode][i];
@@ -915,13 +906,13 @@ void ppu_lrComposeLineImpl(Ppu* ppu, int actMode, bool sub, const bool *bgDecode
         for(int x = 0; x < 256; x++) {
           if(win[x] || prio[x] != curPriority) continue;
           const uint16_t v = val[x];
-          if(v) { outPix[x] = v; if(storeLayer) outLayer[x] = (uint8_t)curLayer; }
+          if(v) { outPix[x] = v; outLayer[x] = (uint8_t)curLayer; }
         }
       } else {
         for(int x = 0; x < 256; x++) {
           if(prio[x] != curPriority) continue;
           const uint16_t v = val[x];
-          if(v) { outPix[x] = v; if(storeLayer) outLayer[x] = (uint8_t)curLayer; }
+          if(v) { outPix[x] = v; outLayer[x] = (uint8_t)curLayer; }
         }
       }
     } else {
@@ -933,25 +924,17 @@ void ppu_lrComposeLineImpl(Ppu* ppu, int actMode, bool sub, const bool *bgDecode
           if(win[x] || obp[x] != curPriority) continue;
           const uint8_t v = obx[x];
           // sprites with palette color < 0xc0 are exempt from color math (id 6)
-          if(v) { outPix[x] = v; if(storeLayer) outLayer[x] = (v < 0xc0) ? 6 : 4; }
+          if(v) { outPix[x] = v; outLayer[x] = (v < 0xc0) ? 6 : 4; }
         }
       } else {
         for(int x = 0; x < 256; x++) {
           if(obp[x] != curPriority) continue;
           const uint8_t v = obx[x];
-          if(v) { outPix[x] = v; if(storeLayer) outLayer[x] = (v < 0xc0) ? 6 : 4; }
+          if(v) { outPix[x] = v; outLayer[x] = (v < 0xc0) ? 6 : 4; }
         }
       }
     }
   }
-}
-
-static void ppu_lrComposeLine(Ppu* ppu, int actMode, bool sub, const bool *bgDecoded) {
-  ppu_lrComposeLineImpl(ppu, actMode, sub, bgDecoded, true);
-}
-
-static void ppu_lrComposeLineNoLayer(Ppu* ppu, int actMode, const bool *bgDecoded) {
-  ppu_lrComposeLineImpl(ppu, actMode, false, bgDecoded, false);
 }
 
 static void ppu_lrRunLine(Ppu* ppu, int y) {
@@ -1093,8 +1076,14 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
   // brightness LUT: cached across lines/frames (R8), rebuilt on change only
   const uint8_t *bright = ppu_lrBright(ppu);
 
+  ppu_lrComposeLine(ppu, actMode, false, bgDecoded);
   const bool mathAny = ppu->mathEnabled[0] || ppu->mathEnabled[1] || ppu->mathEnabled[2]
                     || ppu->mathEnabled[3] || ppu->mathEnabled[4] || ppu->mathEnabled[5];
+  const bool needSub = ppu->addSubscreen && mathAny;
+  if(needSub) ppu_lrComposeLine(ppu, actMode, true, bgDecoded);
+
+  // R2a/R10: final packed-palette cache (shared helper, reused by R5)
+  ppu_lrRefreshPal4(ppu, bright);
   // direct color can only engage on a mode with an 8bpp layer
   bool dcPossible = false;
   if(ppu->directColor) {
@@ -1103,17 +1092,6 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
       if(l < 4 && bitDepthsPerMode[actMode][l] == 8) { dcPossible = true; break; }
     }
   }
-  // R12: when the whole-line fast output path below will run (it reads only
-  // s_lrPix[0]), compose without the dead layer-id line
-  if(!mathAny && ppu->clipMode == 0 && !dcPossible)
-    ppu_lrComposeLineNoLayer(ppu, actMode, bgDecoded);
-  else
-    ppu_lrComposeLine(ppu, actMode, false, bgDecoded);
-  const bool needSub = ppu->addSubscreen && mathAny;
-  if(needSub) ppu_lrComposeLine(ppu, actMode, true, bgDecoded);
-
-  // R2a/R10: final packed-palette cache (shared helper, reused by R5)
-  ppu_lrRefreshPal4(ppu, bright);
 
   if(ppu->psStoring && dcPossible) ppu->psStoring = false;
   const bool psStore = ppu->psStoring;
