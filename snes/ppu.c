@@ -465,6 +465,24 @@ static uint8_t s_psFlg[PS_LINES][128];
 #define PS_F_MATH 2u
 #define PS_F_SUBV 4u
 
+/* R8: brightness LUT cache. Was rebuilt (32 muls + divides) per line by
+ * both ppu_lrRunLine and ppu_lrPaletteLine -- 224x per frame for a value
+ * that only changes on a $2100 write. The valid flag sits in zeroed BSS
+ * (NOT in the NOLOAD DTCM section) so a cold overlay start always
+ * rebuilds, same convention as s_lrPal3Valid. */
+static FF4_LR_SCRATCH uint8_t s_brightLut[32];
+static bool    s_brightValid;
+static uint8_t s_brightFor;
+static const uint8_t* ppu_lrBright(Ppu* ppu) {
+  if(!s_brightValid || s_brightFor != ppu->brightness) {
+    for(int c = 0; c < 32; c++)
+      s_brightLut[c] = (uint8_t)((((c << 3) | (c >> 2)) * ppu->brightness) / 15);
+    s_brightValid = true;
+    s_brightFor = ppu->brightness;
+  }
+  return s_brightLut;
+}
+
 static void ppu_lrRefreshPal3(Ppu* ppu, const uint8_t bright[32]) {
   if(s_lrPal3Valid && s_lrPal3Gen == ppu->cgramGen && s_lrPal3Bright == ppu->brightness)
     return;
@@ -607,57 +625,132 @@ static void ppu_lrDecodeBgLine(Ppu* ppu, int layer, int y) {
   }
 }
 
-/* R7: mode-7 line decode. Exact ppu_getPixelForMode7 math per pixel, with
- * the per-line m7startX/m7startY already computed by ppu_calculateMode7Starts
+/* R7/R8: mode-7 line decode. Exact ppu_getPixelForMode7 math, with the
+ * per-line m7startX/m7startY already computed by ppu_calculateMode7Starts
  * (which also owns the VERTICAL mosaic adjustment, keyed on layer 0's
- * mosaicEnabled exactly like the legacy path). The affine walk is inherently
- * per-pixel, so unlike the tile-span decoder above there is no span
- * structure to exploit -- the win over the legacy path is the same as for
- * the other layers: decode once into line buffers and let the hoisted
- * compose/output stages replace the per-pixel call pipeline.
+ * mosaicEnabled exactly like the legacy path).
  *
- * layer 0 = the mode-7 BG: full 8-bit pixel, painted at the single priority
+ * ppu_m7DecodeLineU8 writes the full 8-bit mode-7 pixel per x. Two
+ * variants:
+ *  - HOT (R8): the census-verified FF4 worldmap shape -- m7matrix[2] == 0
+ *    (no rotation => the whole line samples ONE map row), no xFlip, no
+ *    largeField, no mosaic. The affine walk degenerates to an incremental
+ *    accX (no per-pixel multiply), the tilemap/char row bases hoist out of
+ *    the loop, the tilemap fetch is memoised on the tile column (~1/8
+ *    fetches at 1:1 zoom), and both VRAM fetches are explicit little-endian
+ *    byte loads (tilemap = low byte, char = high byte of the VRAM word)
+ *    instead of 16-bit load + mask/shift.
+ *  - GENERAL: per-pixel legacy math (rotation, flips, largeField bounds,
+ *    mosaic), kept literally except for a tilemap-cell memo, which is
+ *    address-keyed and therefore exact.
+ * Byte-identical by construction: the hot variant computes the same
+ * (m7startX + m0*x) >> 8 value by accumulation (integer, exact, no
+ * overflow: |m0| <= 32768, x <= 255). */
+static void ppu_m7DecodeLineU8(Ppu* ppu, uint8_t dst[256]) {
+#ifdef FF4_M7_CENSUS
+  {
+    static uint32_t n, spr;
+    int sa = 0; for(int i = 0; i < 256; i++) if(ppu->objPixelBuffer[i]) { sa = 1; break; }
+    if(sa) spr++;
+    if((++n % 5000) == 1)
+      fprintf(stderr, "M7CENSUS n=%u spr=%u lf=%d cf=%d xf=%d yf=%d m0=%d m1=%d m2=%d m3=%d mos=%d/%d math=%d%d%d%d%d%d clip=%d dc=%d win0=%d%d mainEn=%d subEn=%d bright=%d extbg=%d\n",
+        n, spr, ppu->m7largeField, ppu->m7charFill, ppu->m7xFlip, ppu->m7yFlip,
+        (int16_t)ppu->m7matrix[0], (int16_t)ppu->m7matrix[1], (int16_t)ppu->m7matrix[2], (int16_t)ppu->m7matrix[3],
+        ppu->bgLayer[0].mosaicEnabled, ppu->mosaicSize,
+        ppu->mathEnabled[0], ppu->mathEnabled[1], ppu->mathEnabled[2], ppu->mathEnabled[3], ppu->mathEnabled[4], ppu->mathEnabled[5],
+        ppu->clipMode, ppu->directColor,
+        ppu->windowLayer[0].window1enabled, ppu->windowLayer[0].window2enabled,
+        ppu->layer[0].mainScreenEnabled, ppu->layer[0].subScreenEnabled, ppu->brightness, ppu->m7extBg);
+  }
+#endif
+  const int32_t m0 = (int16_t)ppu->m7matrix[0];
+  const int32_t m2 = (int16_t)ppu->m7matrix[2];
+  const int mosSize = (ppu->bgLayer[0].mosaicEnabled && ppu->mosaicSize > 1)
+    ? ppu->mosaicSize : 1;
+  if(m2 == 0 && !ppu->m7xFlip && !ppu->m7largeField && mosSize == 1) {
+    // HOT: one source row for the whole line (little-endian byte views).
+    const int yPos = (ppu->m7startY >> 8) & 0x3ff;
+    const uint8_t *tmapRow = (const uint8_t*)(ppu->vram + ((yPos >> 3) << 7));
+    const uint8_t *charHi  = (const uint8_t*)ppu->vram + 1;
+    const int charRowOff = (yPos & 7) << 3;
+    const uint8_t *charRow = charHi;      // set on the first tile fetch
+    int32_t accX = ppu->m7startX;
+    int lastTx = -1;
+    for(int x = 0; x < 256; x++) {
+      const int xPos = (accX >> 8) & 0x3ff;
+      const int tx = xPos >> 3;
+      if(tx != lastTx) {
+        lastTx = tx;
+        charRow = charHi + ((((int)tmapRow[tx << 1] << 6) + charRowOff) << 1);
+      }
+      dst[x] = charRow[(xPos & 7) << 1];
+      accX += m0;
+    }
+    return;
+  }
+  // GENERAL: legacy per-pixel math, tilemap fetch memoised by cell address.
+  int lastTa = -1;
+  int charAdr = 0;
+  for(int x = 0; x < 256; x++) {
+    int lx = x;
+    if(mosSize > 1) lx -= lx % mosSize;
+    const uint8_t rx = ppu->m7xFlip ? 255 - lx : lx;
+    int xPos = (ppu->m7startX + m0 * rx) >> 8;
+    int yPos = (ppu->m7startY + m2 * rx) >> 8;
+    bool outsideMap = xPos < 0 || xPos >= 1024 || yPos < 0 || yPos >= 1024;
+    xPos &= 0x3ff;
+    yPos &= 0x3ff;
+    if(!ppu->m7largeField) outsideMap = false;
+    int ca;
+    if(outsideMap) {
+      if(!ppu->m7charFill) { dst[x] = 0; continue; }
+      ca = 0;                                  // legacy: tile forced to 0
+    } else {
+      const int ta = (yPos >> 3) * 128 + (xPos >> 3);
+      if(ta != lastTa) { lastTa = ta; charAdr = (ppu->vram[ta] & 0xff) << 6; }
+      ca = charAdr;
+    }
+    dst[x] = (uint8_t)(ppu->vram[ca + ((yPos & 7) << 3) + (xPos & 7)] >> 8);
+  }
+}
+
+/* Line scratch for the mode-7 u8 decode (see FF4_LR_SCRATCH above). */
+static FF4_LR_SCRATCH uint8_t s_m7Line[256];
+
+/* layer 0 = the mode-7 BG: full 8-bit pixel, painted at the single priority
  * slot the mode-7 rows of layersPerMode give it. layer 1 = EXTBG (actMode
  * 9): the pixel's bit 7 is its priority, low 7 bits the color index -- the
  * legacy helper returns 0 on a priority mismatch, which maps here to
  * storing (val = low 7 bits, prio = bit 7) and letting the compose pass
  * match on prio: a 0x80 pixel becomes val 0 at prio 1 = transparent, same
- * outcome. Horizontal mosaic is the legacy `lx -= lx % size` applied before
- * the affine math, per layer. */
+ * outcome. */
 static void ppu_lrDecodeM7Line(Ppu* ppu, int layer, int y) {
   (void)y;   // vertical position is baked into m7startX/Y
-  const int mosSize = (ppu->bgLayer[layer].mosaicEnabled && ppu->mosaicSize > 1)
-    ? ppu->mosaicSize : 1;
+  ppu_m7DecodeLineU8(ppu, s_m7Line);
   uint16_t *val = s_lrVal[layer];
   uint8_t  *prio = s_lrPrio[layer];
-  uint8_t hasPrio0 = 0, hasPrio1 = 0;
-  for(int x = 0; x < 256; x++) {
-    int lx = x;
-    if(mosSize > 1) lx -= lx % mosSize;
-    const uint8_t rx = ppu->m7xFlip ? 255 - lx : lx;
-    int xPos = (ppu->m7startX + ppu->m7matrix[0] * rx) >> 8;
-    int yPos = (ppu->m7startY + ppu->m7matrix[2] * rx) >> 8;
-    bool outsideMap = xPos < 0 || xPos >= 1024 || yPos < 0 || yPos >= 1024;
-    xPos &= 0x3ff;
-    yPos &= 0x3ff;
-    if(!ppu->m7largeField) outsideMap = false;
-    const uint8_t tile = outsideMap ? 0 : ppu->vram[(yPos >> 3) * 128 + (xPos >> 3)] & 0xff;
-    const uint8_t pixel = (outsideMap && !ppu->m7charFill) ? 0
-      : ppu->vram[tile * 64 + (yPos & 7) * 8 + (xPos & 7)] >> 8;
-    if(layer == 1) {
-      const uint8_t p = (pixel & 0x80) ? 1 : 0;
+  if(layer == 1) {
+    uint8_t hasPrio0 = 0, hasPrio1 = 0;
+    for(int x = 0; x < 256; x++) {
+      const uint8_t pixel = s_m7Line[x];
+      const uint8_t p = (uint8_t)(pixel >> 7);
       const uint16_t v = pixel & 0x7f;
       val[x] = v;
       prio[x] = p;
       if(v) { if(p) hasPrio1 = 1; else hasPrio0 = 1; }
-    } else {
-      val[x] = pixel;
-      prio[x] = 0;
-      if(pixel) hasPrio0 = 1;
     }
+    if(hasPrio0) s_lrHasPrio[layer][0] = 1;
+    if(hasPrio1) s_lrHasPrio[layer][1] = 1;
+  } else {
+    uint32_t acc = 0;
+    for(int x = 0; x < 256; x++) {
+      const uint8_t pixel = s_m7Line[x];
+      val[x] = pixel;
+      acc |= pixel;
+    }
+    memset(prio, 0, 256);
+    if(acc) s_lrHasPrio[layer][0] = 1;
   }
-  if(hasPrio0) s_lrHasPrio[layer][0] = 1;
-  if(hasPrio1) s_lrHasPrio[layer][1] = 1;
 }
 
 static void ppu_lrComposeLine(Ppu* ppu, int actMode, bool sub, const bool *bgDecoded) {
@@ -734,6 +827,41 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
   const int actMode = (ppu->mode == 1 && ppu->bg3priority) ? 8
                     : (ppu->mode == 7 && ppu->m7extBg)     ? 9 : ppu->mode;
 
+  s_lrSpritesAny = false;
+  for(int x = 0; x < 256; x++) {
+    if(ppu->objPixelBuffer[x]) { s_lrSpritesAny = true; break; }
+  }
+
+  /* R8: fused decode->output for the dominant mode-7 line. Census
+   * (2026-07-11, 008/011/012): FF4's worldmap runs mode 7 with no color
+   * math, clip mode 0, no direct color, layer 0 unwindowed on the main
+   * screen, no mosaic -- and ~80% of mode-7 lines carry no sprite pixel.
+   * For that exact shape the generic pipeline collapses: the composed
+   * line is layer-0-over-backdrop, and since backdrop resolves to
+   * cgram[0] = s_lrPal3[0], the output bytes are s_lrPal3[pixel] for
+   * every pixel, transparent or not. So decode straight into the output
+   * (and into the R5 line store when it is recording: flags are all 0
+   * here by construction, same as the generic whole-line fast path).
+   * Every other mode-7 line falls through to the generic stages below. */
+  if(actMode == 7 && !s_lrSpritesAny
+     && !(ppu->mathEnabled[0] || ppu->mathEnabled[1] || ppu->mathEnabled[2]
+       || ppu->mathEnabled[3] || ppu->mathEnabled[4] || ppu->mathEnabled[5])
+     && ppu->clipMode == 0 && !ppu->directColor
+     && ppu->layer[0].mainScreenEnabled && !ppu->layer[0].mainScreenWindowed) {
+    ppu_lrRefreshPal3(ppu, ppu_lrBright(ppu));
+    const bool psStore7 = ppu->psStoring;
+    uint8_t *buf = psStore7 ? s_psPix[row] : s_m7Line;  // decode into the R5 store directly
+    ppu_m7DecodeLineU8(ppu, buf);
+    uint8_t *px = out + ppu->pixelOutputFormat;
+    for(int x = 0; x < 256; x++) {
+      const uint8_t *c3 = s_lrPal3[buf[x]];
+      px[0] = c3[0]; px[1] = c3[1]; px[2] = c3[2];
+      px += PPU_PIXELBUF_XPITCH;
+    }
+    if(psStore7) memset(s_psFlg[row], 0, 128);
+    return;
+  }
+
   // window membership per window-layer (cheap when both windows disabled).
   // Membership is piecewise-constant in x: whatever the enable/invert/mask
   // combination, it can only change value at a window edge. Evaluate
@@ -772,16 +900,8 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
       bgDecoded[l] = true;
     }
   }
-  s_lrSpritesAny = false;
-  for(int x = 0; x < 256; x++) {
-    if(ppu->objPixelBuffer[x]) { s_lrSpritesAny = true; break; }
-  }
-
-  // brightness LUT: 5-bit channel -> scaled 8-bit, one build per line
-  uint8_t bright[32];
-  for(int c = 0; c < 32; c++) {
-    bright[c] = (uint8_t)((((c << 3) | (c >> 2)) * ppu->brightness) / 15);
-  }
+  // brightness LUT: cached across lines/frames (R8), rebuilt on change only
+  const uint8_t *bright = ppu_lrBright(ppu);
 
   ppu_lrComposeLine(ppu, actMode, false, bgDecoded);
   const bool mathAny = ppu->mathEnabled[0] || ppu->mathEnabled[1] || ppu->mathEnabled[2]
@@ -908,10 +1028,7 @@ static void ppu_lrPaletteLine(Ppu* ppu, int y) {
   const int row = y - 1;
   if(row < 0 || row >= PS_LINES) return;
   uint8_t *out = &ppu->pixelBuffer[row * PPU_PIXELBUF_STRIDE];
-  uint8_t bright[32];
-  for(int c = 0; c < 32; c++) {
-    bright[c] = (uint8_t)((((c << 3) | (c >> 2)) * ppu->brightness) / 15);
-  }
+  const uint8_t *bright = ppu_lrBright(ppu);
   ppu_lrRefreshPal3(ppu, bright);
   const uint8_t *pixL = s_psPix[row];
   const uint8_t *subL = s_psSub[row];
