@@ -452,12 +452,20 @@ static FF4_LR_SCRATCH uint8_t  s_lrWin[6][256];     // window membership per win
 // R2a: final palette — cgram color with display brightness pre-applied, in
 // pixel-buffer byte order (b, g, r). Serves every no-math, no-clip,
 // non-direct-color pixel of the output stage with three byte copies.
-// Keyed on (cgramGen, brightness); s_lrPal3Valid sits in zeroed BSS so a
+// Keyed on (cgramGen, brightness); s_lrPal4Valid sits in zeroed BSS so a
 // cold overlay start always rebuilds.
-static FF4_LR_SCRATCH uint8_t  s_lrPal3[256][3];
-static bool     s_lrPal3Valid;
-static uint32_t s_lrPal3Gen;
-static uint8_t  s_lrPal3Bright;
+/* R10: one little-endian WORD per color, pixel-cell layout with the
+ * pixelOutputFormat baked in (BGRX=1: [0,b,g,r]; 0: [b,g,r,0]). A single
+ * 32-bit store per pixel replaces three byte stores in every whole-line
+ * output path. The pad byte is written as 0 -- which is what it always
+ * contains (nothing ever writes it), and no reader observes it anyway:
+ * the device blit, the PPM dump and --fb-crc all consume only the three
+ * color bytes. */
+static FF4_LR_SCRATCH uint32_t s_lrPal4[256];
+static bool     s_lrPal4Valid;
+static uint32_t s_lrPal4Gen;
+static uint8_t  s_lrPal4Bright;
+static uint8_t  s_lrPal4Fmt;
 
 // R5 palette-only skip line store (see ppu.h). ~143 KB of overlay BSS.
 #define PS_LINES 224
@@ -472,7 +480,7 @@ static uint8_t s_psFlg[PS_LINES][128];
  * both ppu_lrRunLine and ppu_lrPaletteLine -- 224x per frame for a value
  * that only changes on a $2100 write. The valid flag sits in zeroed BSS
  * (NOT in the NOLOAD DTCM section) so a cold overlay start always
- * rebuilds, same convention as s_lrPal3Valid. */
+ * rebuilds, same convention as s_lrPal4Valid. */
 static FF4_LR_SCRATCH uint8_t s_brightLut[32];
 static bool    s_brightValid;
 static uint8_t s_brightFor;
@@ -486,18 +494,22 @@ static const uint8_t* ppu_lrBright(Ppu* ppu) {
   return s_brightLut;
 }
 
-static void ppu_lrRefreshPal3(Ppu* ppu, const uint8_t bright[32]) {
-  if(s_lrPal3Valid && s_lrPal3Gen == ppu->cgramGen && s_lrPal3Bright == ppu->brightness)
+static void ppu_lrRefreshPal4(Ppu* ppu, const uint8_t bright[32]) {
+  if(s_lrPal4Valid && s_lrPal4Gen == ppu->cgramGen && s_lrPal4Bright == ppu->brightness
+     && s_lrPal4Fmt == (uint8_t)ppu->pixelOutputFormat)
     return;
+  const int sh = ppu->pixelOutputFormat * 8;
   for(int c = 0; c < 256; c++) {
     const uint16_t col = ppu->cgram[c];
-    s_lrPal3[c][0] = bright[(col >> 10) & 0x1f];
-    s_lrPal3[c][1] = bright[(col >> 5) & 0x1f];
-    s_lrPal3[c][2] = bright[col & 0x1f];
+    const uint32_t w = (uint32_t)bright[(col >> 10) & 0x1f]
+                     | ((uint32_t)bright[(col >> 5) & 0x1f] << 8)
+                     | ((uint32_t)bright[col & 0x1f] << 16);
+    s_lrPal4[c] = w << sh;
   }
-  s_lrPal3Valid = true;
-  s_lrPal3Gen = ppu->cgramGen;
-  s_lrPal3Bright = ppu->brightness;
+  s_lrPal4Valid = true;
+  s_lrPal4Gen = ppu->cgramGen;
+  s_lrPal4Bright = ppu->brightness;
+  s_lrPal4Fmt = (uint8_t)ppu->pixelOutputFormat;
 }
 
 // R2b: decoded-tile-row cache. Keyed on (planeAdr, bitDepth) — the VRAM
@@ -717,8 +729,11 @@ static void ppu_m7DecodeLineU8(Ppu* ppu, uint8_t dst[256]) {
   }
 }
 
-/* Line scratch for the mode-7 u8 decode (see FF4_LR_SCRATCH above). */
-static FF4_LR_SCRATCH uint8_t s_m7Line[256];
+/* Line scratch for the mode-7 u8 decode. Plain BSS since R10: s_lrPal4 is
+ * 256 bytes bigger than the pal3 it replaced and .ff4_dtcm sits 16 bytes
+ * from its LD boundary -- this sequential once-per-line buffer is the
+ * cheapest tenant to evict. */
+static uint8_t s_m7Line[256];
 static uint8_t s_m7Win[256];   // R8b: sprite-layer window mask -- plain
                                // overlay BSS, NOT DTCM: the .ff4_dtcm
                                // budget is within 16 bytes of a fixed
@@ -764,7 +779,7 @@ static void ppu_lrDecodeM7Line(Ppu* ppu, int layer, int y) {
 
 /* R8: apply layer-l's main-screen window mask to a decoded u8 line --
  * masked pixels drop to index 0 (backdrop; the fused output then writes
- * s_lrPal3[0] = the cgram[0] color, exactly what the compose pass yields
+ * s_lrPal4[0] = the cgram[0] color, exactly what the compose pass yields
  * for a window-masked pixel). Same membership evaluation and span
  * structure as the s_lrWin build in ppu_lrRunLine: membership is
  * piecewise-constant between window edges. FF4 worldmap concretely: an
@@ -939,7 +954,7 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
    * screen, no mosaic -- and ~80% of mode-7 lines carry no sprite pixel.
    * For that exact shape the generic pipeline collapses: the composed
    * line is layer-0-over-backdrop, and since backdrop resolves to
-   * cgram[0] = s_lrPal3[0], the output bytes are s_lrPal3[pixel] for
+   * cgram[0] = s_lrPal4[0], the output words are s_lrPal4[pixel] for
    * every pixel, transparent or not. So decode straight into the output
    * (and into the R5 line store when it is recording: flags are all 0
    * here by construction, same as the generic whole-line fast path).
@@ -953,16 +968,15 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
        || ppu->mathEnabled[3] || ppu->mathEnabled[4] || ppu->mathEnabled[5])
      && ppu->clipMode == 0 && !ppu->directColor
      && ppu->layer[0].mainScreenEnabled) {
-    ppu_lrRefreshPal3(ppu, ppu_lrBright(ppu));
+    ppu_lrRefreshPal4(ppu, ppu_lrBright(ppu));
     const bool psStore7 = ppu->psStoring;
     uint8_t *buf = psStore7 ? s_psPix[row] : s_m7Line;  // decode into the R5 store directly
     ppu_m7DecodeLineU8(ppu, buf);
     if(ppu->layer[0].mainScreenWindowed) ppu_lrWinMaskU8(ppu, 0, buf);
-    uint8_t *px = out + ppu->pixelOutputFormat;
+    uint8_t *px = out;                    // R10: whole 4-byte cells (fmt baked in pal4)
     if(!sprLine7) {
       for(int x = 0; x < 256; x++) {
-        const uint8_t *c3 = s_lrPal3[buf[x]];
-        px[0] = c3[0]; px[1] = c3[1]; px[2] = c3[2];
+        memcpy(px, &s_lrPal4[buf[x]], 4);
         px += PPU_PIXELBUF_XPITCH;
       }
     } else {
@@ -987,8 +1001,7 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
         const uint8_t ov = obx[x];
         if(ov && (!objWin || !s_m7Win[x]) && (obp[x] != 0 || pix == 0)) pix = ov;
         if(psStore7) buf[x] = pix;          // R5 store records the composed index
-        const uint8_t *c3 = s_lrPal3[pix];
-        px[0] = c3[0]; px[1] = c3[1]; px[2] = c3[2];
+        memcpy(px, &s_lrPal4[pix], 4);
         px += PPU_PIXELBUF_XPITCH;
       }
     }
@@ -1055,8 +1068,8 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
   const bool needSub = ppu->addSubscreen && mathAny;
   if(needSub) ppu_lrComposeLine(ppu, actMode, true, bgDecoded);
 
-  // R2a: final palette cache (now via the shared helper, reused by R5)
-  ppu_lrRefreshPal3(ppu, bright);
+  // R2a/R10: final packed-palette cache (shared helper, reused by R5)
+  ppu_lrRefreshPal4(ppu, bright);
   // direct color can only engage on a mode with an 8bpp layer
   bool dcPossible = false;
   if(ppu->directColor) {
@@ -1071,14 +1084,12 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
 
   if(!mathAny && ppu->clipMode == 0 && !dcPossible) {
     uint8_t *psp = psStore ? s_psPix[row] : NULL;
+    uint8_t *px = out;                    // R10: one packed word per pixel
     for(int x = 0; x < 256; x++) {
       const uint8_t pi = (uint8_t)s_lrPix[0][x];
       if(psp) psp[x] = pi;
-      const uint8_t* c3 = s_lrPal3[pi];
-      uint8_t *px = out + x * PPU_PIXELBUF_XPITCH + ppu->pixelOutputFormat;
-      px[0] = c3[0];
-      px[1] = c3[1];
-      px[2] = c3[2];
+      memcpy(px, &s_lrPal4[pi], 4);
+      px += PPU_PIXELBUF_XPITCH;
     }
     if(psStore) memset(s_psFlg[row], 0, 128);
     return;
@@ -1175,18 +1186,17 @@ static void ppu_lrPaletteLine(Ppu* ppu, int y) {
   if(row < 0 || row >= PS_LINES) return;
   uint8_t *out = &ppu->pixelBuffer[row * PPU_PIXELBUF_STRIDE];
   const uint8_t *bright = ppu_lrBright(ppu);
-  ppu_lrRefreshPal3(ppu, bright);
+  ppu_lrRefreshPal4(ppu, bright);
   const uint8_t *pixL = s_psPix[row];
   const uint8_t *subL = s_psSub[row];
   const uint8_t *flgL = s_psFlg[row];
   for(int x = 0; x < 256; x++) {
     const uint8_t f = (uint8_t)((flgL[x >> 1] >> ((x & 1) ? 4 : 0)) & 0x7);
-    uint8_t *px = out + x * PPU_PIXELBUF_XPITCH + ppu->pixelOutputFormat;
     if(f == 0) {
-      const uint8_t *c3 = s_lrPal3[pixL[x]];
-      px[0] = c3[0]; px[1] = c3[1]; px[2] = c3[2];
+      memcpy(out + x * PPU_PIXELBUF_XPITCH, &s_lrPal4[pixL[x]], 4);   // R10
       continue;
     }
+    uint8_t *px = out + x * PPU_PIXELBUF_XPITCH + ppu->pixelOutputFormat;
     int r, g, b;
     if(f & PS_F_CLIP) { r = 0; g = 0; b = 0; }
     else {
