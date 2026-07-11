@@ -716,7 +716,12 @@ static void ppu_m7DecodeLineU8(Ppu* ppu, uint8_t dst[256]) {
 
 /* Line scratch for the mode-7 u8 decode (see FF4_LR_SCRATCH above). */
 static FF4_LR_SCRATCH uint8_t s_m7Line[256];
-static FF4_LR_SCRATCH uint8_t s_m7Win[256];   // R8b: sprite-layer window mask
+static uint8_t s_m7Win[256];   // R8b: sprite-layer window mask -- plain
+                               // overlay BSS, NOT DTCM: the .ff4_dtcm
+                               // budget is within 16 bytes of a fixed
+                               // boundary in the device LD script, and
+                               // this mask is only touched on sprite
+                               // lines (~20%), rebuilt per line
 
 /* layer 0 = the mode-7 BG: full 8-bit pixel, painted at the single priority
  * slot the mode-7 rows of layersPerMode give it. layer 1 = EXTBG (actMode
