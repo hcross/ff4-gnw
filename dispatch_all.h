@@ -14,6 +14,7 @@ void AfterBattle_c(Snes *snes);
 void FieldMain_c(Snes *snes);
 void CalcObjScreenPos_c(Snes *snes);
 void GetTileProps_c(Snes *snes);
+void ResetAllSprites_c(Snes *snes);
 void SetNpcMapPtr_c(Snes *snes);
 void ClearNpcMapCell_c(Snes *snes);
 void SetNpcMapCell_c(Snes *snes);
@@ -227,7 +228,7 @@ void UpdateLocalTiles_c(Snes *snes);
 void BoardChoco_c(Snes *snes);
 
 typedef struct { uint32_t pc; void (*fn)(Snes *snes); } ff4_dispatch_entry_t;
-#define FF4_DISPATCH_COUNT 208
+#define FF4_DISPATCH_COUNT 209
 extern const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT];
 int ff4_dispatch_try(Snes *snes, uint32_t pc);
 extern uint32_t ff4_dispatch_hits;

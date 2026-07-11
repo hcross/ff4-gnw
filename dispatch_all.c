@@ -71,6 +71,9 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x00834e, InitMapRAM_c },  /* field */
     { 0x00883d, _00883d_c },  /* field */
     { 0x00885e, _00885e_c },  /* field */
+    { 0x009179, ResetAllSprites_c },  /* field — park all 128 OAM-shadow sprites + clear high-OAM shadow;
+                                         entry is $9179 not $9177 (disasm off-by-2, 6th instance); ~25% of
+                                         009's interpreted opcodes before this port */
     { 0x009f6e, UpdateLocalTiles_c },  /* field — five local tile-property slots; real entry (5 JSR sites),
                                           replaces the retired 0x1e9f6c (rewritten bank + off-by-2: $1E:9F6C
                                           is data, never a call target — its old L2 evidence was vacuous) */
