@@ -716,6 +716,7 @@ static void ppu_m7DecodeLineU8(Ppu* ppu, uint8_t dst[256]) {
 
 /* Line scratch for the mode-7 u8 decode (see FF4_LR_SCRATCH above). */
 static FF4_LR_SCRATCH uint8_t s_m7Line[256];
+static FF4_LR_SCRATCH uint8_t s_m7Win[256];   // R8b: sprite-layer window mask
 
 /* layer 0 = the mode-7 BG: full 8-bit pixel, painted at the single priority
  * slot the mode-7 rows of layersPerMode give it. layer 1 = EXTBG (actMode
@@ -761,6 +762,31 @@ static void ppu_lrDecodeM7Line(Ppu* ppu, int layer, int y) {
  * piecewise-constant between window edges. FF4 worldmap concretely: an
  * inverted window1 [1,254] on layer 0 masking only columns 0 and 255
  * (the classic mode-7 edge-artifact hide). */
+/* R8b: build layer-l's window membership as a 0/1 mask line (same span
+ * evaluation as ppu_lrWinMaskU8 / the s_lrWin build; 1 = masked off the
+ * main screen). Used for the sprite layer in the fused mode-7 path,
+ * where masked sprite pixels must simply not paint. */
+static void ppu_lrWinSpanMask(Ppu* ppu, int l, uint8_t *mask) {
+  if(!ppu->windowLayer[l].window1enabled && !ppu->windowLayer[l].window2enabled) {
+    memset(mask, 0, 256);
+    return;
+  }
+  int winBp[6] = {0, ppu->window1left, ppu->window1right + 1,
+                  ppu->window2left, ppu->window2right + 1, 256};
+  for(int i = 1; i < 6; i++) {
+    int v = winBp[i], j = i;
+    while(j > 0 && winBp[j-1] > v) { winBp[j] = winBp[j-1]; j--; }
+    winBp[j] = v;
+  }
+  for(int i = 0; i < 5; i++) {
+    const int s = winBp[i];
+    int e = winBp[i + 1];
+    if(e > 256) e = 256;
+    if(s >= e) continue;
+    memset(&mask[s], ppu_getWindowState(ppu, l, s) ? 1 : 0, e - s);
+  }
+}
+
 static void ppu_lrWinMaskU8(Ppu* ppu, int l, uint8_t *buf) {
   if(!ppu->windowLayer[l].window1enabled && !ppu->windowLayer[l].window2enabled) return;
   int winBp[6] = {0, ppu->window1left, ppu->window1right + 1,
@@ -869,7 +895,11 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
    * (and into the R5 line store when it is recording: flags are all 0
    * here by construction, same as the generic whole-line fast path).
    * Every other mode-7 line falls through to the generic stages below. */
-  if(actMode == 7 && !s_lrSpritesAny
+  // sprLine: this line has sprite pixels AND the sprite layer is visible.
+  // (spritesAny with layer 4 main-screen-disabled paints nothing -- the
+  // plain no-sprite loop is then exact.)
+  const bool sprLine7 = s_lrSpritesAny && ppu->layer[4].mainScreenEnabled;
+  if(actMode == 7
      && !(ppu->mathEnabled[0] || ppu->mathEnabled[1] || ppu->mathEnabled[2]
        || ppu->mathEnabled[3] || ppu->mathEnabled[4] || ppu->mathEnabled[5])
      && ppu->clipMode == 0 && !ppu->directColor
@@ -880,10 +910,38 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
     ppu_m7DecodeLineU8(ppu, buf);
     if(ppu->layer[0].mainScreenWindowed) ppu_lrWinMaskU8(ppu, 0, buf);
     uint8_t *px = out + ppu->pixelOutputFormat;
-    for(int x = 0; x < 256; x++) {
-      const uint8_t *c3 = s_lrPal3[buf[x]];
-      px[0] = c3[0]; px[1] = c3[1]; px[2] = c3[2];
-      px += PPU_PIXELBUF_XPITCH;
+    if(!sprLine7) {
+      for(int x = 0; x < 256; x++) {
+        const uint8_t *c3 = s_lrPal3[buf[x]];
+        px[0] = c3[0]; px[1] = c3[1]; px[2] = c3[2];
+        px += PPU_PIXELBUF_XPITCH;
+      }
+    } else {
+      // R8b: sprite lines fused too. actMode 7's paint order is
+      // spr(prio0) < BG < spr(prio1) < spr(prio2) < spr(prio3), and the
+      // sprite buffers hold ONE (pixel, priority) pair per x, so the
+      // five compose passes collapse to a single select: an opaque,
+      // un-window-masked sprite pixel wins unless it has priority 0 AND
+      // the BG pixel is opaque. The composed index feeds the same pal3
+      // lookup (and the R5 store) that the compose+output stages would
+      // produce -- math, clip and direct color are gated off, so layer
+      // ids are inert. (FF4 windows the sprite layer exactly like the
+      // BG: the [1,254]-inverted edge mask -- hence the mask, not a
+      // gate: a gate here sent every sprite line back to the generic
+      // path.)
+      const uint8_t *obx = ppu->objPixelBuffer;
+      const uint8_t *obp = ppu->objPriorityBuffer;
+      const bool objWin = ppu->layer[4].mainScreenWindowed;
+      if(objWin) ppu_lrWinSpanMask(ppu, 4, s_m7Win);
+      for(int x = 0; x < 256; x++) {
+        uint8_t pix = buf[x];
+        const uint8_t ov = obx[x];
+        if(ov && (!objWin || !s_m7Win[x]) && (obp[x] != 0 || pix == 0)) pix = ov;
+        if(psStore7) buf[x] = pix;          // R5 store records the composed index
+        const uint8_t *c3 = s_lrPal3[pix];
+        px[0] = c3[0]; px[1] = c3[1]; px[2] = c3[2];
+        px += PPU_PIXELBUF_XPITCH;
+      }
     }
     if(psStore7) memset(s_psFlg[row], 0, 128);
 #ifdef FF4_M7_CENSUS
