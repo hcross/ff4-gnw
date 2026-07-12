@@ -161,23 +161,26 @@ struct Ppu {
    * `frameOverscan ? 239 : 224` — FF4 sets frameOverscan=false so 224
    * rows are sufficient. Indexing goes through PPU_PIXELBUF_STRIDE /
    * PPU_PIXELBUF_XPITCH (ppu.c, main.c) — keep them in sync. */
-  uint8_t pixelBuffer[256 * 4 * 224] __attribute__((aligned(4))); // R10c: word-store output path
+  uint8_t pixelBuffer[256 * 2 * 224] __attribute__((aligned(4))); // R11: native RGB565 output
 #else
   // times 2 for even and odd frame
-  uint8_t pixelBuffer[512 * 4 * 239 * 2] __attribute__((aligned(4))); // R10c
+  uint8_t pixelBuffer[512 * 2 * 239 * 2] __attribute__((aligned(4))); // R11
 #endif
   uint8_t pixelOutputFormat;
 };
 
 /* Row stride and per-SNES-column pitch of pixelBuffer (see the field's
- * comment). The FF4 static build stores one 4-byte pixel per column;
- * stock LakeSnes stores a hires pair of two. */
+ * comment). R11: pixels are stored as native little-endian RGB565 words
+ * (the exact value the device blit used to compute per pixel), so the
+ * blit is a plain row copy and every writer stores half the bytes. The
+ * FF4 static build stores one 2-byte pixel per column; stock LakeSnes
+ * stores a hires pair of two. */
 #ifdef FF4_PORT_STATIC_SNES
+#define PPU_PIXELBUF_STRIDE 512
+#define PPU_PIXELBUF_XPITCH 2
+#else
 #define PPU_PIXELBUF_STRIDE 1024
 #define PPU_PIXELBUF_XPITCH 4
-#else
-#define PPU_PIXELBUF_STRIDE 2048
-#define PPU_PIXELBUF_XPITCH 8
 #endif
 
 enum { ppu_pixelOutputFormatXBGR = 0, ppu_pixelOutputFormatBGRX = 1 };

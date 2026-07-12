@@ -74,19 +74,14 @@ void ff4_get_state(uint32_t *frames_out, uint64_t *cycles_out) {
 void ff4_blit_to_lcd(uint16_t *lcd_fb) {
     if (ff4_snes == NULL || ff4_snes->ppu == NULL) return;
     const uint8_t *src = ff4_snes->ppu->pixelBuffer;
-    /* ppu_handlePixel writes one 4-byte chunk per SNES column in this
-     * build (the stock "right" hires sub-pixel is dropped -- FF4 never
-     * uses hires and it always duplicated the left one). With
-     * pixelOutputFormat = BGRX (= 1), the in-memory order is
-     * [X, B, G, R] inside each chunk. */
+    /* R11: the PPU output stage now stores native little-endian RGB565
+     * (the exact value this loop used to compute per pixel from the
+     * 8-bit BGRX cells), so the blit is a plain row copy. Measured at
+     * ~15% of the walking frame as a per-pixel conversion (LR-sampling,
+     * 2026-07-12). */
     for (int y = 0; y < SNES_H; y++) {
-        const uint8_t *row = src + y * PPU_PIXELBUF_STRIDE;
-        uint16_t *dst = lcd_fb + (y + Y_OFFSET) * GW_LCD_W + X_OFFSET;
-        for (int x = 0; x < SNES_W; x++) {
-            uint8_t b = row[x * PPU_PIXELBUF_XPITCH + 1];
-            uint8_t g = row[x * PPU_PIXELBUF_XPITCH + 2];
-            uint8_t r = row[x * PPU_PIXELBUF_XPITCH + 3];
-            dst[x] = (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
-        }
+        memcpy(lcd_fb + (y + Y_OFFSET) * GW_LCD_W + X_OFFSET,
+               src + y * PPU_PIXELBUF_STRIDE,
+               SNES_W * PPU_PIXELBUF_XPITCH);
     }
 }

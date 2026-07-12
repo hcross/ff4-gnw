@@ -454,13 +454,11 @@ static FF4_LR_SCRATCH uint8_t  s_lrWin[6][256];     // window membership per win
 // non-direct-color pixel of the output stage with three byte copies.
 // Keyed on (cgramGen, brightness); s_lrPal4Valid sits in zeroed BSS so a
 // cold overlay start always rebuilds.
-/* R10: one little-endian WORD per color, pixel-cell layout with the
- * pixelOutputFormat baked in (BGRX=1: [0,b,g,r]; 0: [b,g,r,0]). A single
- * 32-bit store per pixel replaces three byte stores in every whole-line
- * output path. The pad byte is written as 0 -- which is what it always
- * contains (nothing ever writes it), and no reader observes it anyway:
- * the device blit, the PPM dump and --fb-crc all consume only the three
- * color bytes. */
+/* R10 (historical): one little-endian word per color replaced three byte
+ * stores in every whole-line output path. R11 supersedes the layout: the
+ * palette now holds native RGB565 halfwords and pixelOutputFormat no
+ * longer participates in pixel encoding (the field and its setter remain
+ * as inert API surface). */
 /* R10b: guaranteed-inline unaligned word store. gcc for the DEVICE emits
  * memcpy(px, &word, 4) as a LIBC CALL (57k calls/frame -- ~3 ms, found by
  * LR-sampling the flash memcpy bucket); the desktop compiler inlined it,
@@ -474,12 +472,23 @@ static FF4_LR_SCRATCH uint8_t  s_lrWin[6][256];     // window membership per win
  * the whole exercise was about. */
 typedef uint32_t __attribute__((may_alias)) PpuU32Alias;
 #define PPU_STORE32(ptr, val) (*(PpuU32Alias*)(ptr) = (val))
+/* R11: pixelBuffer now holds native little-endian RGB565 (one uint16 per
+ * sub-pixel cell). Same aligned may_alias trick as R10c -- every
+ * destination is 2-aligned (buffer aligned(4), STRIDE/XPITCH even), so
+ * this lowers to a single strh on the device toolchain. */
+typedef uint16_t __attribute__((may_alias)) PpuU16Alias;
+#define PPU_STORE16(ptr, val) (*(PpuU16Alias*)(ptr) = (val))
+/* R11: pack the exact RGB565 value the device blit used to compute from
+ * the 8-bit-per-channel cells: ((r8 & 0xF8) << 8) | ((g8 & 0xFC) << 3) |
+ * (b8 >> 3). Keeping the same 5->8-bit brightness quantization upstream
+ * makes the blitted output byte-identical to the pre-R11 pipeline. */
+#define PPU_PACK565(r8, g8, b8) \
+  ((uint16_t)((((r8) & 0xF8) << 8) | (((g8) & 0xFC) << 3) | ((b8) >> 3)))
 
-static FF4_LR_SCRATCH uint32_t s_lrPal4[256];
+static FF4_LR_SCRATCH uint16_t s_lrPal4[256];
 static bool     s_lrPal4Valid;
 static uint32_t s_lrPal4Gen;
 static uint8_t  s_lrPal4Bright;
-static uint8_t  s_lrPal4Fmt;
 
 // R5 palette-only skip line store (see ppu.h). ~143 KB of overlay BSS.
 #define PS_LINES 224
@@ -509,21 +518,17 @@ static const uint8_t* ppu_lrBright(Ppu* ppu) {
 }
 
 static void ppu_lrRefreshPal4(Ppu* ppu, const uint8_t bright[32]) {
-  if(s_lrPal4Valid && s_lrPal4Gen == ppu->cgramGen && s_lrPal4Bright == ppu->brightness
-     && s_lrPal4Fmt == (uint8_t)ppu->pixelOutputFormat)
+  if(s_lrPal4Valid && s_lrPal4Gen == ppu->cgramGen && s_lrPal4Bright == ppu->brightness)
     return;
-  const int sh = ppu->pixelOutputFormat * 8;
   for(int c = 0; c < 256; c++) {
     const uint16_t col = ppu->cgram[c];
-    const uint32_t w = (uint32_t)bright[(col >> 10) & 0x1f]
-                     | ((uint32_t)bright[(col >> 5) & 0x1f] << 8)
-                     | ((uint32_t)bright[col & 0x1f] << 16);
-    s_lrPal4[c] = w << sh;
+    s_lrPal4[c] = PPU_PACK565(bright[col & 0x1f],
+                              bright[(col >> 5) & 0x1f],
+                              bright[(col >> 10) & 0x1f]);
   }
   s_lrPal4Valid = true;
   s_lrPal4Gen = ppu->cgramGen;
   s_lrPal4Bright = ppu->brightness;
-  s_lrPal4Fmt = (uint8_t)ppu->pixelOutputFormat;
 }
 
 // R2b: decoded-tile-row cache. Keyed on (planeAdr, bitDepth) — the VRAM
@@ -990,7 +995,7 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
     uint8_t *px = out;                    // R10: whole 4-byte cells (fmt baked in pal4)
     if(!sprLine7) {
       for(int x = 0; x < 256; x++) {
-        PPU_STORE32(px, s_lrPal4[buf[x]]);
+        PPU_STORE16(px, s_lrPal4[buf[x]]);
         px += PPU_PIXELBUF_XPITCH;
       }
     } else {
@@ -1015,7 +1020,7 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
         const uint8_t ov = obx[x];
         if(ov && (!objWin || !s_m7Win[x]) && (obp[x] != 0 || pix == 0)) pix = ov;
         if(psStore7) buf[x] = pix;          // R5 store records the composed index
-        PPU_STORE32(px, s_lrPal4[pix]);
+        PPU_STORE16(px, s_lrPal4[pix]);
         px += PPU_PIXELBUF_XPITCH;
       }
     }
@@ -1102,7 +1107,7 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
     for(int x = 0; x < 256; x++) {
       const uint8_t pi = (uint8_t)s_lrPix[0][x];
       if(psp) psp[x] = pi;
-      PPU_STORE32(px, s_lrPal4[pi]);
+      PPU_STORE16(px, s_lrPal4[pi]);
       px += PPU_PIXELBUF_XPITCH;
     }
     if(psStore) memset(s_psFlg[row], 0, 128);
@@ -1188,10 +1193,8 @@ static void ppu_lrRunLine(Ppu* ppu, int y) {
       if(g < 0) g = 0;
       if(b < 0) b = 0;
     }
-    uint8_t *px = out + x * PPU_PIXELBUF_XPITCH + ppu->pixelOutputFormat;
-    px[0] = bright[b];
-    px[1] = bright[g];
-    px[2] = bright[r];
+    PPU_STORE16(out + x * PPU_PIXELBUF_XPITCH,
+                PPU_PACK565(bright[r], bright[g], bright[b]));
   }
 }
 
@@ -1207,10 +1210,9 @@ static void ppu_lrPaletteLine(Ppu* ppu, int y) {
   for(int x = 0; x < 256; x++) {
     const uint8_t f = (uint8_t)((flgL[x >> 1] >> ((x & 1) ? 4 : 0)) & 0x7);
     if(f == 0) {
-      PPU_STORE32(out + x * PPU_PIXELBUF_XPITCH, s_lrPal4[pixL[x]]);   // R10/R10b
+      PPU_STORE16(out + x * PPU_PIXELBUF_XPITCH, s_lrPal4[pixL[x]]);   // R10/R10b/R11
       continue;
     }
-    uint8_t *px = out + x * PPU_PIXELBUF_XPITCH + ppu->pixelOutputFormat;
     int r, g, b;
     if(f & PS_F_CLIP) { r = 0; g = 0; b = 0; }
     else {
@@ -1237,7 +1239,8 @@ static void ppu_lrPaletteLine(Ppu* ppu, int y) {
       if(r > 31) r = 31; if(g > 31) g = 31; if(b > 31) b = 31;
       if(r < 0) r = 0; if(g < 0) g = 0; if(b < 0) b = 0;
     }
-    px[0] = bright[b]; px[1] = bright[g]; px[2] = bright[r];
+    PPU_STORE16(out + x * PPU_PIXELBUF_XPITCH,
+                PPU_PACK565(bright[r], bright[g], bright[b]));
   }
 }
 
@@ -1365,16 +1368,24 @@ static void ppu_handlePixel(Ppu* ppu, int x, int y) {
    * lines must not be rendered anyway. */
   if (row < 0 || row >= 224) return;
 #endif
-  ppu->pixelBuffer[row * PPU_PIXELBUF_STRIDE + x * PPU_PIXELBUF_XPITCH + 0 + ppu->pixelOutputFormat] = ((b2 << 3) | (b2 >> 2)) * ppu->brightness / 15;
-  ppu->pixelBuffer[row * PPU_PIXELBUF_STRIDE + x * PPU_PIXELBUF_XPITCH + 1 + ppu->pixelOutputFormat] = ((g2 << 3) | (g2 >> 2)) * ppu->brightness / 15;
-  ppu->pixelBuffer[row * PPU_PIXELBUF_STRIDE + x * PPU_PIXELBUF_XPITCH + 2 + ppu->pixelOutputFormat] = ((r2 << 3) | (r2 >> 2)) * ppu->brightness / 15;
+  {
+    const uint8_t r8 = (uint8_t)((((r2 << 3) | (r2 >> 2)) * ppu->brightness) / 15);
+    const uint8_t g8 = (uint8_t)((((g2 << 3) | (g2 >> 2)) * ppu->brightness) / 15);
+    const uint8_t b8 = (uint8_t)((((b2 << 3) | (b2 >> 2)) * ppu->brightness) / 15);
+    PPU_STORE16(&ppu->pixelBuffer[row * PPU_PIXELBUF_STRIDE + x * PPU_PIXELBUF_XPITCH],
+                PPU_PACK565(r8, g8, b8));
+  }
 #ifndef FF4_PORT_STATIC_SNES
   /* Right half of the hires pair -- dropped in the FF4 static build:
    * outside hires it duplicates (b2,g2,r2) above, no reader ever
    * consumed it, and it doubled the buffer (see pixelBuffer in ppu.h). */
-  ppu->pixelBuffer[row * 2048 + x * 8 + 4 + ppu->pixelOutputFormat] = ((b << 3) | (b >> 2)) * ppu->brightness / 15;
-  ppu->pixelBuffer[row * 2048 + x * 8 + 5 + ppu->pixelOutputFormat] = ((g << 3) | (g >> 2)) * ppu->brightness / 15;
-  ppu->pixelBuffer[row * 2048 + x * 8 + 6 + ppu->pixelOutputFormat] = ((r << 3) | (r >> 2)) * ppu->brightness / 15;
+  {
+    const uint8_t r8 = (uint8_t)((((r << 3) | (r >> 2)) * ppu->brightness) / 15);
+    const uint8_t g8 = (uint8_t)((((g << 3) | (g >> 2)) * ppu->brightness) / 15);
+    const uint8_t b8 = (uint8_t)((((b << 3) | (b >> 2)) * ppu->brightness) / 15);
+    PPU_STORE16(&ppu->pixelBuffer[row * PPU_PIXELBUF_STRIDE + x * PPU_PIXELBUF_XPITCH + 2],
+                PPU_PACK565(r8, g8, b8));
+  }
 #endif
 }
 
@@ -2184,14 +2195,14 @@ void ppu_putPixels(Ppu* ppu, uint8_t* pixels) {
       y1 = y + (ppu->evenFrame ? 0 : 239);
       y2 = y1;
     }
-    memcpy(pixels + (dest * 2048), &ppu->pixelBuffer[y1 * 2048], 2048);
-    memcpy(pixels + ((dest + 1) * 2048), &ppu->pixelBuffer[y2 * 2048], 2048);
+    memcpy(pixels + (dest * PPU_PIXELBUF_STRIDE), &ppu->pixelBuffer[y1 * PPU_PIXELBUF_STRIDE], PPU_PIXELBUF_STRIDE);
+    memcpy(pixels + ((dest + 1) * PPU_PIXELBUF_STRIDE), &ppu->pixelBuffer[y2 * PPU_PIXELBUF_STRIDE], PPU_PIXELBUF_STRIDE);
   }
   // clear top 2 lines, and following 14 and last 16 lines if not overscanning
-  memset(pixels, 0, 2048 * 2);
+  memset(pixels, 0, PPU_PIXELBUF_STRIDE * 2);
   if(!ppu->frameOverscan) {
-    memset(pixels + (2 * 2048), 0, 2048 * 14);
-    memset(pixels + (464 * 2048), 0, 2048 * 16);
+    memset(pixels + (2 * PPU_PIXELBUF_STRIDE), 0, PPU_PIXELBUF_STRIDE * 14);
+    memset(pixels + (464 * PPU_PIXELBUF_STRIDE), 0, PPU_PIXELBUF_STRIDE * 16);
   }
 #endif
 }
