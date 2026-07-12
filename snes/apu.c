@@ -18,6 +18,15 @@ static const uint8_t bootRom[0x40] = {
   0xf6, 0xda, 0x00, 0xba, 0xf4, 0xc4, 0xf4, 0xdd, 0x5d, 0xd0, 0xdb, 0x1f, 0x00, 0x00, 0xc0, 0xff
 };
 
+/* R13: hot-path code routed to zero-wait-state ITCM on device (see the
+ * matching macro in dsp.c; the section is copied by the FF4 launch path
+ * in retro-go-sd's rg_emulators.c). Desktop builds: no-op. */
+#ifdef STM32H7B0xx
+#define FF4_ITCM_TEXT __attribute__((section(".ff4_itcm_text")))
+#else
+#define FF4_ITCM_TEXT
+#endif
+
 static void apu_cycle(Apu* apu);
 static void apu_syncTimers(Apu* apu);
 
@@ -74,7 +83,7 @@ void apu_handleState(Apu* apu, StateHandler* sh) {
   dsp_handleState(apu->dsp, sh);
 }
 
-int apu_runCycles(Apu* apu, int wantedCycles) {
+FF4_ITCM_TEXT int apu_runCycles(Apu* apu, int wantedCycles) {
   int runCycles = 0;
   uint32_t startCycles = apu->cycles;
   while(runCycles < wantedCycles) {
@@ -124,7 +133,7 @@ static void apu_syncTimers(Apu* apu) {
   }
 }
 
-static void apu_cycle(Apu* apu) {
+FF4_ITCM_TEXT static void apu_cycle(Apu* apu) {
   if((apu->cycles & 0x1f) == 0) {
     // every 32 cycles
     dsp_cycle(apu->dsp);
@@ -132,7 +141,7 @@ static void apu_cycle(Apu* apu) {
   apu->cycles++;   // timers are materialized lazily (apu_syncTimers)
 }
 
-uint8_t apu_read(Apu* apu, uint16_t adr) {
+FF4_ITCM_TEXT uint8_t apu_read(Apu* apu, uint16_t adr) {
   switch(adr) {
     case 0xf0:
     case 0xf1:
@@ -170,7 +179,7 @@ uint8_t apu_read(Apu* apu, uint16_t adr) {
   return apu->ram[adr];
 }
 
-void apu_write(Apu* apu, uint16_t adr, uint8_t val) {
+FF4_ITCM_TEXT void apu_write(Apu* apu, uint16_t adr, uint8_t val) {
   switch(adr) {
     case 0xf0: {
       break; // test register
@@ -226,19 +235,19 @@ void apu_write(Apu* apu, uint16_t adr, uint8_t val) {
   apu->ram[adr] = val;
 }
 
-uint8_t apu_spcRead(void* mem, uint16_t adr) {
+FF4_ITCM_TEXT uint8_t apu_spcRead(void* mem, uint16_t adr) {
   Apu* apu = (Apu*) mem;
   apu_cycle(apu);
   return apu_read(apu, adr);
 }
 
-void apu_spcWrite(void* mem, uint16_t adr, uint8_t val) {
+FF4_ITCM_TEXT void apu_spcWrite(void* mem, uint16_t adr, uint8_t val) {
   Apu* apu = (Apu*) mem;
   apu_cycle(apu);
   apu_write(apu, adr, val);
 }
 
-void apu_spcIdle(void* mem, bool waiting) {
+FF4_ITCM_TEXT void apu_spcIdle(void* mem, bool waiting) {
   Apu* apu = (Apu*) mem;
   apu_cycle(apu);
 }

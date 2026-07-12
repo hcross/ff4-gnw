@@ -470,6 +470,15 @@ static FF4_LR_SCRATCH uint8_t  s_lrWin[6][256];     // window membership per win
  * fact 4-aligned (pixelBuffer is aligned(4), STRIDE 1024 and XPITCH 4 are
  * multiples of 4), so an ALIGNED may_alias word store gives the single str
  * the whole exercise was about. */
+/* R13: hot-path code routed to zero-wait-state ITCM on device (see the
+ * matching macro in dsp.c; the section is copied by the FF4 launch path
+ * in retro-go-sd's rg_emulators.c). Desktop builds: no-op. */
+#ifdef STM32H7B0xx
+#define FF4_ITCM_TEXT __attribute__((section(".ff4_itcm_text")))
+#else
+#define FF4_ITCM_TEXT
+#endif
+
 typedef uint32_t __attribute__((may_alias)) PpuU32Alias;
 #define PPU_STORE32(ptr, val) (*(PpuU32Alias*)(ptr) = (val))
 /* R11: pixelBuffer now holds native little-endian RGB565 (one uint16 per
@@ -551,7 +560,7 @@ static uint8_t  s_trcRaw[LR_TRC_SLOTS][8];
 static uint32_t s_trcKey[LR_TRC_SLOTS];   // (planeAdr << 4) | bitDepth
 static uint32_t s_trcGen[LR_TRC_SLOTS];
 
-static void ppu_lrDecodeBgLine(Ppu* ppu, int layer, int y) {
+FF4_ITCM_TEXT static void ppu_lrDecodeBgLine(Ppu* ppu, int layer, int y) {
   // Same address/extraction math as ppu_getPixelForBgLayer, restricted to
   // modes 0/1/3 (wideTiles == bigTiles, same tileBits/highBit both axes),
   // no mosaic (ly is line-constant).
@@ -888,7 +897,7 @@ static void ppu_lrWinMaskU8(Ppu* ppu, int l, uint8_t *buf) {
   }
 }
 
-static void ppu_lrComposeLine(Ppu* ppu, int actMode, bool sub, const bool *bgDecoded) {
+FF4_ITCM_TEXT static void ppu_lrComposeLine(Ppu* ppu, int actMode, bool sub, const bool *bgDecoded) {
   uint16_t *outPix   = s_lrPix[sub ? 1 : 0];
   uint8_t  *outLayer = s_lrLayer[sub ? 1 : 0];
   memset(outPix, 0, 256 * sizeof(uint16_t));
@@ -942,7 +951,7 @@ static void ppu_lrComposeLine(Ppu* ppu, int actMode, bool sub, const bool *bgDec
   }
 }
 
-static void ppu_lrRunLine(Ppu* ppu, int y) {
+FF4_ITCM_TEXT static void ppu_lrRunLine(Ppu* ppu, int y) {
   // R7: per-line mode-7 starts, BEFORE the row clamp and the forced-blank
   // bail so the m7startX/Y state evolves exactly as on the legacy path
   // (which computes them on blanked lines AND on the clamped vblank-edge

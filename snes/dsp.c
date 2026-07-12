@@ -59,6 +59,17 @@ static const int gaussValues[512] = {
 static int clamp16(int val);
 static int clip16(int val);
 static bool dsp_checkCounter(Dsp* dsp, int rate);
+/* R13: route the hot per-sample/per-line code to the zero-wait-state ITCM
+ * on device (64 KB, otherwise unused while FF4 runs -- it is only an
+ * itc_malloc arena for other cores). The section travels at the tail of
+ * the overlay blob and is copied into ITCM by the FF4 launch path in
+ * rg_emulators.c before the overlay BSS wipe. Desktop builds: no-op. */
+#ifdef STM32H7B0xx
+#define FF4_ITCM_TEXT __attribute__((section(".ff4_itcm_text")))
+#else
+#define FF4_ITCM_TEXT
+#endif
+
 static void dsp_cycleChannel(Dsp* dsp, int ch);
 static void dsp_handleEcho(Dsp* dsp);
 static void dsp_handleGain(Dsp* dsp, int ch);
@@ -182,7 +193,7 @@ void dsp_handleState(Dsp* dsp, StateHandler* sh) {
   sh_handleByteArray(sh, dsp->ram, 0x80);
 }
 
-void dsp_cycle(Dsp* dsp) {
+FF4_ITCM_TEXT void dsp_cycle(Dsp* dsp) {
   dsp->sampleOutL = 0;
   dsp->sampleOutR = 0;
   dsp->echoOutL = 0;
@@ -212,12 +223,12 @@ static int clip16(int val) {
   return (int16_t) (val & 0xffff);
 }
 
-static bool dsp_checkCounter(Dsp* dsp, int rate) {
+FF4_ITCM_TEXT static bool dsp_checkCounter(Dsp* dsp, int rate) {
   if(rate == 0) return false;
   return ((dsp->counter + rateOffsets[rate]) % rateValues[rate]) == 0;
 }
 
-static void dsp_handleEcho(Dsp* dsp) {
+FF4_ITCM_TEXT static void dsp_handleEcho(Dsp* dsp) {
   // increment fir buffer index
   dsp->firBufferIndex++;
   dsp->firBufferIndex &= 0x7;
@@ -263,7 +274,7 @@ static void dsp_handleEcho(Dsp* dsp) {
   }
 }
 
-static void dsp_cycleChannel(Dsp* dsp, int ch) {
+FF4_ITCM_TEXT static void dsp_cycleChannel(Dsp* dsp, int ch) {
   // handle pitch counter
   int pitch = dsp->channel[ch].pitch;
   if(ch > 0 && dsp->channel[ch].pitchModulation) {
@@ -358,7 +369,7 @@ static void dsp_cycleChannel(Dsp* dsp, int ch) {
   }
 }
 
-static void dsp_handleGain(Dsp* dsp, int ch) {
+FF4_ITCM_TEXT static void dsp_handleGain(Dsp* dsp, int ch) {
   int newGain = dsp->channel[ch].gain;
   int rate = 0;
   // handle gain mode
@@ -406,7 +417,7 @@ static void dsp_handleGain(Dsp* dsp, int ch) {
   if(dsp_checkCounter(dsp, rate)) dsp->channel[ch].gain = newGain;
 }
 
-static int16_t dsp_getSample(Dsp* dsp, int ch) {
+FF4_ITCM_TEXT static int16_t dsp_getSample(Dsp* dsp, int ch) {
   // pos = pitchCounter>>12 (0..7) + bufferOffset (0..10, even) <= 17;
   // pos+3 <= 20: one small table replaces four integer divisions (% 12)
   static const uint8_t mod12[24] = {
@@ -459,7 +470,7 @@ static void dsp_decodeBrr(Dsp* dsp, int ch) {
   if(dsp->channel[ch].bufferOffset >= 12) dsp->channel[ch].bufferOffset = 0;
 }
 
-static void dsp_handleNoise(Dsp* dsp) {
+FF4_ITCM_TEXT static void dsp_handleNoise(Dsp* dsp) {
   if(dsp_checkCounter(dsp, dsp->noiseRate)) {
     int bit = (dsp->noiseSample & 1) ^ ((dsp->noiseSample >> 1) & 1);
     dsp->noiseSample = ((dsp->noiseSample >> 1) & 0x3fff) | (bit << 14);

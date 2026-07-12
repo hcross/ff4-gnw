@@ -24,6 +24,15 @@ static uint16_t spc_pullWord(Spc* spc);
 static void spc_pushWord(Spc* spc, uint16_t value);
 static uint16_t spc_readWord(Spc* spc, uint16_t adrl, uint16_t adrh);
 static void spc_writeWord(Spc* spc, uint16_t adrl, uint16_t adrh, uint16_t value);
+/* R13: hot-path code routed to zero-wait-state ITCM on device (see the
+ * matching macro in dsp.c; copied by the FF4 launch path in retro-go-sd's
+ * rg_emulators.c). Desktop builds: no-op. */
+#ifdef STM32H7B0xx
+#define FF4_ITCM_TEXT __attribute__((section(".ff4_itcm_text")))
+#else
+#define FF4_ITCM_TEXT
+#endif
+
 static void spc_doOpcode(Spc* spc, uint8_t opcode);
 
 // addressing modes and opcode functions not declared, only used after defintions
@@ -70,7 +79,7 @@ void spc_handleState(Spc* spc, StateHandler* sh) {
   sh_handleWords(sh, &spc->pc, NULL);
 }
 
-void spc_runOpcode(Spc* spc) {
+FF4_ITCM_TEXT void spc_runOpcode(Spc* spc) {
   if(spc->resetWanted) {
     // based on 6502, brk without writes
     spc->resetWanted = false;
@@ -454,7 +463,7 @@ static void spc_dec(Spc* spc, uint16_t adr) {
   spc_setZN(spc, val);
 }
 
-static void spc_doOpcode(Spc* spc, uint8_t opcode) {
+FF4_ITCM_TEXT static void spc_doOpcode(Spc* spc, uint8_t opcode) {
   switch(opcode) {
     case 0x00: { // nop imp
       spc_read(spc, spc->pc);
