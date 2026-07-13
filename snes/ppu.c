@@ -453,8 +453,8 @@ static FF4_LR_SCRATCH uint16_t s_lrVal[4][256];     // decoded BG line: CGRAM in
 static FF4_LR_SCRATCH uint8_t  s_lrPrio[4][256];    // decoded BG line: tile priority bit
 static FF4_LR_SCRATCH uint8_t  s_lrHasPrio[4][2];   // any opaque pixel at prio 0/1 on this line?
 static FF4_LR_SCRATCH bool     s_lrSpritesAny;      // any sprite pixel on this line?
-static FF4_LR_SCRATCH uint16_t s_lrPix[2][256];     // composed pixel index   [0]=main [1]=sub
-static FF4_LR_SCRATCH uint8_t  s_lrLayer[2][256];   // composed layer id (5 = backdrop, 6 = no-math sprite)
+static FF4_LR_SCRATCH uint16_t s_lrPix[2][256] __attribute__((aligned(4)));   // composed pixel index [0]=main [1]=sub; 4-aligned for the R19 word fill
+static FF4_LR_SCRATCH uint8_t  s_lrLayer[2][256] __attribute__((aligned(4))); // composed layer id (5 = backdrop, 6 = no-math sprite)
 static FF4_LR_SCRATCH uint8_t  s_lrWin[6][256];     // window membership per window-layer, this line
 // R2a: final palette — cgram color with display brightness pre-applied, in
 // pixel-buffer byte order (b, g, r). Serves every no-math, no-clip,
@@ -1046,11 +1046,24 @@ static void ppu_lrWinMaskU8(Ppu* ppu, int l, uint8_t *buf) {
   }
 }
 
+/* R19: inline word-fill for the compose base coats. The four fixed-size
+ * memsets per math line (768 B x 2 buffer pairs) resolved to the LIBC
+ * memset in internal flash -- called from AXI-RAM code, every base coat
+ * paid the veneer + flash fetch, and the LR-sampled memset bucket was
+ * 6% of the whole device frame (2500-sample PC+LR histogram on the 014
+ * walking bench, 2026-07-14). Same class as the R10b flash-memcpy find.
+ * s_lrPix rows are 4-aligned by type; s_lrLayer rows are forced to 4 by
+ * the aligned attribute on the array. */
+static inline void ppu_lrFillW(void *dst, uint32_t word, int words) {
+  uint32_t *d = (uint32_t *)dst;
+  for(int i = 0; i < words; i++) d[i] = word;
+}
+
 FF4_ITCM_TEXT static void ppu_lrComposeLine(Ppu* ppu, int actMode, bool sub, const bool *bgDecoded) {
   uint16_t *outPix   = s_lrPix[sub ? 1 : 0];
   uint8_t  *outLayer = s_lrLayer[sub ? 1 : 0];
-  memset(outPix, 0, 256 * sizeof(uint16_t));
-  memset(outLayer, 5, 256);                       // backdrop
+  ppu_lrFillW(outPix, 0, 128);                    // 256 x u16
+  ppu_lrFillW(outLayer, 0x05050505u, 64);         // backdrop
   for(int i = layerCountPerMode[actMode] - 1; i >= 0; i--) {
     const int curLayer = layersPerMode[actMode][i];
     const int curPriority = prioritysPerMode[actMode][i];
@@ -1113,10 +1126,10 @@ FF4_ITCM_TEXT static void ppu_lrComposeBothLines(Ppu* ppu, int actMode, const bo
   uint8_t  *outLayerM = s_lrLayer[0];
   uint16_t *outPixS   = s_lrPix[1];
   uint8_t  *outLayerS = s_lrLayer[1];
-  memset(outPixM, 0, 256 * sizeof(uint16_t));
-  memset(outLayerM, 5, 256);                      // backdrop
-  memset(outPixS, 0, 256 * sizeof(uint16_t));
-  memset(outLayerS, 5, 256);
+  ppu_lrFillW(outPixM, 0, 128);                   // 256 x u16
+  ppu_lrFillW(outLayerM, 0x05050505u, 64);        // backdrop
+  ppu_lrFillW(outPixS, 0, 128);
+  ppu_lrFillW(outLayerS, 0x05050505u, 64);
   for(int i = layerCountPerMode[actMode] - 1; i >= 0; i--) {
     const int curLayer = layersPerMode[actMode][i];
     const int curPriority = prioritysPerMode[actMode][i];
@@ -1350,12 +1363,17 @@ FF4_ITCM_TEXT static void ppu_lrRunLine(Ppu* ppu, int y) {
     uint8_t *psp = psStore ? s_psPix[row] : NULL;
     uint8_t *px = out;
     uint8_t flagPend = 0;
+    // R19: fold the per-pixel "layer < 6 && mathEnabled[layer]" pair of
+    // tests into one indexed load (layer is 0..6 here; 7 unused).
+    uint8_t mathLut[8];
+    for(int l = 0; l < 6; l++) mathLut[l] = ppu->mathEnabled[l];
+    mathLut[6] = 0; mathLut[7] = 0;
     for(int x = 0; x < 256; x++) {
       const int pixel = s_lrPix[0][x];
       const int layer = s_lrLayer[0][x];
       uint16_t v;
       uint8_t f = 0, sp = 0;
-      if(!(layer < 6 && ppu->mathEnabled[layer])) {
+      if(!mathLut[layer]) {
         v = s_lrPal4[pixel & 0xff];       // same packed value the fast path stores
       } else {
         const uint16_t c1 = ppu->cgram[pixel & 0xff];
