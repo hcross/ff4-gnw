@@ -99,6 +99,12 @@ void ppu_free(Ppu* ppu) {
 #endif
 }
 
+/* R15: window-mask generation counter -- bumped by every window register
+ * write, state load and reset; consumed by the cached per-line window
+ * mask build in ppu_lrRunLine (declared here because reset/handleState
+ * bump it before the line-renderer statics are declared). */
+static uint32_t s_winGen;
+
 void ppu_reset(Ppu* ppu) {
   ppu_objInvalidateLineMap();   // R9
   memset(ppu->vram, 0, sizeof(ppu->vram));
@@ -172,6 +178,7 @@ void ppu_reset(Ppu* ppu) {
   ppu->window1right = 0;
   ppu->window2left = 0;
   ppu->window2right = 0;
+  s_winGen++; // R15: window registers reset above
   ppu->clipMode = 0;
   ppu->preventMathMode = 0;
   ppu->addSubscreen = false;
@@ -263,7 +270,7 @@ void ppu_handleState(Ppu* ppu, StateHandler* sh) {
   sh_handleByteArray(sh, ppu->highOam, 0x20);
   sh_handleByteArray(sh, ppu->objPixelBuffer, 256);
   sh_handleByteArray(sh, ppu->objPriorityBuffer, 256);
-  if(!sh->saving) { ppu->cgramGen++; ppu->vramGen++; ppu->skipHaveBaseline = false; ppu->psValid = false; ppu->psStoring = false; } // loaded gfx: invalidate caches + force a render
+  if(!sh->saving) { ppu->cgramGen++; ppu->vramGen++; s_winGen++; ppu->skipHaveBaseline = false; ppu->psValid = false; ppu->psStoring = false; } // loaded gfx: invalidate caches + force a render
 }
 
 bool ppu_checkOverscan(Ppu* ppu) {
@@ -498,6 +505,16 @@ static FF4_LR_SCRATCH uint16_t s_lrPal4[256];
 static bool     s_lrPal4Valid;
 static uint32_t s_lrPal4Gen;
 static uint8_t  s_lrPal4Bright;
+/* R15: window-mask line cache. s_lrWin only depends on the window
+ * registers ($2123-$212B), which field scenes touch rarely -- yet the
+ * masks were rebuilt EVERY line (6 x 256-byte memsets = 344 KB/frame,
+ * the memset bucket of the continuous-scroll LR profile, 2026-07-13).
+ * s_winGen bumps on every window register write, on state load and on
+ * reset; the per-line rebuild becomes a generation check. Mid-frame
+ * writes keep their exact behaviour: the write bumps the gen, the next
+ * line rebuilds. Zeroed-BSS validity flag = cold overlay start rebuilds. */
+static bool     s_lrWinValid;
+static uint32_t s_lrWinFor;
 
 // R5 palette-only skip line store (see ppu.h). ~143 KB of overlay BSS.
 #define PS_LINES 224
@@ -1054,6 +1071,7 @@ FF4_ITCM_TEXT static void ppu_lrRunLine(Ppu* ppu, int y) {
   // combination, it can only change value at a window edge. Evaluate
   // ppu_getWindowState once per span and memset, instead of once per pixel
   // (measured at 34% of the whole render on the M7, R1).
+  if(!s_lrWinValid || s_lrWinFor != s_winGen) {
   int winBp[6] = {0, ppu->window1left, ppu->window1right + 1,
                   ppu->window2left, ppu->window2right + 1, 256};
   for(int i = 1; i < 6; i++) {           // insertion sort, 6 entries
@@ -1073,6 +1091,9 @@ FF4_ITCM_TEXT static void ppu_lrRunLine(Ppu* ppu, int y) {
         memset(&s_lrWin[l][s], ppu_getWindowState(ppu, l, s) ? 1 : 0, e - s);
       }
     }
+  }
+  s_lrWinValid = true;
+  s_lrWinFor = s_winGen;
   }
 
   // decode each BG layer used by either screen
@@ -2083,6 +2104,7 @@ void ppu_write(Ppu* ppu, uint8_t adr, uint8_t val) {
     case 0x23:
     case 0x24:
     case 0x25: {
+      s_winGen++; // R15: invalidate the cached window-mask lines
       ppu->windowLayer[(adr - 0x23) * 2].window1inversed = val & 0x1;
       ppu->windowLayer[(adr - 0x23) * 2].window1enabled = val & 0x2;
       ppu->windowLayer[(adr - 0x23) * 2].window2inversed = val & 0x4;
@@ -2094,22 +2116,27 @@ void ppu_write(Ppu* ppu, uint8_t adr, uint8_t val) {
       break;
     }
     case 0x26: {
+      s_winGen++; // R15
       ppu->window1left = val;
       break;
     }
     case 0x27: {
+      s_winGen++; // R15
       ppu->window1right = val;
       break;
     }
     case 0x28: {
+      s_winGen++; // R15
       ppu->window2left = val;
       break;
     }
     case 0x29: {
+      s_winGen++; // R15
       ppu->window2right = val;
       break;
     }
     case 0x2a: {
+      s_winGen++; // R15
       ppu->windowLayer[0].maskLogic = val & 0x3;
       ppu->windowLayer[1].maskLogic = (val >> 2) & 0x3;
       ppu->windowLayer[2].maskLogic = (val >> 4) & 0x3;
@@ -2117,6 +2144,7 @@ void ppu_write(Ppu* ppu, uint8_t adr, uint8_t val) {
       break;
     }
     case 0x2b: {
+      s_winGen++; // R15
       ppu->windowLayer[4].maskLogic = val & 0x3;
       ppu->windowLayer[5].maskLogic = (val >> 2) & 0x3;
       break;
