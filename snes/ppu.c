@@ -577,6 +577,87 @@ static uint8_t  s_trcRaw[LR_TRC_SLOTS][8];
 static uint32_t s_trcKey[LR_TRC_SLOTS];   // (planeAdr << 4) | bitDepth
 static uint32_t s_trcGen[LR_TRC_SLOTS];
 
+/* R16: map-space decoded-line cache for BG layer 0 (the main field
+ * background). One slot per map line (ly & 0xff -- 256 slots cover the
+ * 224 visible screen lines without internal collisions), each holding
+ * the FULL 512-pixel map-space line: val | prio << 7 packed in one byte
+ * (gated to bitDepth <= 4, so paletteBase + pixel <= 127). Horizontal
+ * scroll then reduces the per-frame decode to a windowed copy -- the
+ * tilemap resolution, R2b fetch and hFlip work run once per map line
+ * instead of once per frame. Gated to 8-pixel tiles, no mosaic; every
+ * other shape falls back to the direct decode. Tag = (ly, vramGen,
+ * config epoch); layer-config changes bump the epoch. 131 KB of overlay
+ * BSS, paid for by the R11 pixelBuffer halving. */
+#define ML_SLOTS 256
+#define ML_W     512
+static uint8_t  s_mlVal[ML_SLOTS][ML_W];
+static uint16_t s_mlLy[ML_SLOTS];
+static uint32_t s_mlGen[ML_SLOTS];   // vramGen ^ (cfg epoch << 24) at decode time
+static uint32_t s_mlCfgA;            // layer-0 tilemapAdr | tileAdr << 16
+static uint32_t s_mlCfgB;            // wider | higher<<1 | bitDepth<<2 | mode<<8
+static uint32_t s_mlEpoch;           // bumped on config change (joins the tag)
+
+/* R16: fill one map-space line of the layer-0 cache. Same address and
+ * extraction math as the direct path below, walked tile-by-tile across
+ * the full map width (512 px when tilemapWider, else the 256-px map
+ * repeats into both halves so the extraction mask never special-cases). */
+static void ppu_mlDecodeLine0(Ppu* ppu, int ly, uint32_t slot) {
+  const int bitDepth = bitDepthsPerMode[ppu->mode][0];
+  const int hi = ppu->bgLayer[0].tilemapHigher;
+  const int wide = ppu->bgLayer[0].tilemapWider;
+  uint8_t *out = s_mlVal[slot];
+  for(int tx = 0; tx < 64; tx++) {
+    const int lx = tx << 3;
+    uint16_t tilemapAdr = ppu->bgLayer[0].tilemapAdr + (((ly >> 3) & 0x1f) << 5 | ((lx >> 3) & 0x1f));
+    if((lx & 0x100) && wide) tilemapAdr += 0x400;
+    if((ly & 0x100) && hi) tilemapAdr += wide ? 0x800 : 0x400;
+    const uint16_t tile = ppu->vram[tilemapAdr & 0x7fff];
+    const uint8_t prio = (tile & 0x2000) ? 0x80 : 0;
+    int paletteNum = (tile & 0x1c00) >> 10;
+    const int row = (tile & 0x8000) ? 7 - (ly & 0x7) : (ly & 0x7);
+    const int tileNum = tile & 0x3ff;
+    int paletteSize = 4;
+    if(bitDepth > 2) paletteSize = 16;
+    if(ppu->mode == 0) paletteNum += 0;  // layer 0: 8 * layer == 0
+    const int paletteBase = paletteSize * paletteNum;
+    const uint16_t planeAdr = (ppu->bgLayer[0].tileAdr + ((tileNum & 0x3ff) * 4 * bitDepth) + row) & 0x7fff;
+    const uint32_t trcKey = ((uint32_t)planeAdr << 4) | (uint32_t)bitDepth;
+    const uint32_t trcSlot = planeAdr & (LR_TRC_SLOTS - 1);
+    uint8_t *raw = s_trcRaw[trcSlot];
+    if(s_trcGen[trcSlot] != ppu->vramGen || s_trcKey[trcSlot] != trcKey) {
+      const uint16_t plane1 = ppu->vram[planeAdr];
+      uint16_t plane2 = 0;
+      if(bitDepth > 2) plane2 = ppu->vram[(planeAdr + 8) & 0x7fff];
+      for(int col = 0; col < 8; col++) {
+        int pixel = (plane1 >> col) & 1;
+        pixel |= ((plane1 >> (8 + col)) & 1) << 1;
+        if(bitDepth > 2) {
+          pixel |= ((plane2 >> col) & 1) << 2;
+          pixel |= ((plane2 >> (8 + col)) & 1) << 3;
+        }
+        raw[col] = (uint8_t)pixel;
+      }
+      s_trcGen[trcSlot] = ppu->vramGen;
+      s_trcKey[trcSlot] = trcKey;
+    }
+    const bool hFlip = (tile & 0x4000) != 0;
+    uint8_t *op = &out[lx];
+    if(hFlip) {
+      for(int i = 0; i < 8; i++) {
+        const int pixel = raw[i];
+        op[i] = (uint8_t)((pixel == 0 ? 0 : (paletteBase + pixel)) | prio);
+      }
+    } else {
+      for(int i = 0; i < 8; i++) {
+        const int pixel = raw[7 - i];
+        op[i] = (uint8_t)((pixel == 0 ? 0 : (paletteBase + pixel)) | prio);
+      }
+    }
+  }
+  s_mlLy[slot] = (uint16_t)ly;
+  s_mlGen[slot] = ppu->vramGen ^ (s_mlEpoch << 24);
+}
+
 FF4_ITCM_TEXT static void ppu_lrDecodeBgLine(Ppu* ppu, int layer, int y) {
   // Same address/extraction math as ppu_getPixelForBgLayer, restricted to
   // modes 0/1/3 (wideTiles == bigTiles, same tileBits/highBit both axes),
@@ -594,6 +675,41 @@ FF4_ITCM_TEXT static void ppu_lrDecodeBgLine(Ppu* ppu, int layer, int y) {
     ? ppu->mosaicSize : 1;
   if(mosSize > 1) yEff -= (yEff - ppu->mosaicStartLine) % mosSize;
   const int ly = (yEff + ppu->bgLayer[layer].vScroll) & 0x3ff;
+  // R16: layer-0 windowed extraction from the map-space line cache. Gated
+  // to the exact shape ppu_mlDecodeLine0 implements (8-pixel tiles, <= 4bpp
+  // so val|prio packs in one byte, no mosaic); anything else falls through
+  // to the direct span walk below. Config is tagged with FULL fields (two
+  // words, no hashing) -- a change bumps the epoch, which joins every
+  // slot's generation tag.
+  if(layer == 0 && !bigTiles && bitDepth <= 4 && mosSize == 1) {
+    const uint32_t cfgA = (uint32_t)ppu->bgLayer[0].tilemapAdr
+                        | ((uint32_t)ppu->bgLayer[0].tileAdr << 16);
+    const uint32_t cfgB = (uint32_t)(ppu->bgLayer[0].tilemapWider ? 1 : 0)
+                        | ((uint32_t)(ppu->bgLayer[0].tilemapHigher ? 1 : 0) << 1)
+                        | ((uint32_t)bitDepth << 2)
+                        | ((uint32_t)ppu->mode << 8);
+    if(cfgA != s_mlCfgA || cfgB != s_mlCfgB) {
+      s_mlCfgA = cfgA; s_mlCfgB = cfgB; s_mlEpoch++;
+    }
+    const uint32_t slot = (uint32_t)ly & (ML_SLOTS - 1);
+    const uint32_t genTag = ppu->vramGen ^ (s_mlEpoch << 24);
+    if(s_mlLy[slot] != (uint16_t)ly || s_mlGen[slot] != genTag)
+      ppu_mlDecodeLine0(ppu, ly, slot);
+    const uint8_t *ml = s_mlVal[slot];
+    uint16_t *ov = s_lrVal[0];
+    uint8_t  *op = s_lrPrio[0];
+    int hasP0 = 0, hasP1 = 0;
+    for(int x = 0; x < 256; x++) {
+      const uint8_t b = ml[(x + hScroll) & (ML_W - 1)];
+      const uint8_t v = b & 0x7f;
+      const uint8_t pr = b >> 7;
+      ov[x] = v; op[x] = pr;
+      if(v) { if(pr) hasP1 = 1; else hasP0 = 1; }
+    }
+    s_lrHasPrio[0][0] = (uint8_t)hasP0;
+    s_lrHasPrio[0][1] = (uint8_t)hasP1;
+    return;
+  }
   int sx = 0;
   while(sx < 256) {
     const int lx = (sx + hScroll) & 0x3ff;
