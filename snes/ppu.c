@@ -590,6 +590,13 @@ static uint32_t s_trcGen[LR_TRC_SLOTS];
  * BSS, paid for by the R11 pixelBuffer halving. */
 #define ML_SLOTS 256
 #define ML_W     512
+/* Which BG layer the map-space cache serves. Default 0 (BG1, the main
+ * field background). Building with -DFF4_ML_LAYER=1 swaps it to BG2 --
+ * the cheap value probe of the sub-frame plan (PLAN-SUBFRAME.md):
+ * measure BG2's share before paying the RAM for a second cache. */
+#ifndef FF4_ML_LAYER
+#define FF4_ML_LAYER 0
+#endif
 static uint8_t  s_mlVal[ML_SLOTS][ML_W];
 static uint16_t s_mlLy[ML_SLOTS];
 static uint32_t s_mlGen[ML_SLOTS];   // vramGen ^ (cfg epoch << 24) at decode time
@@ -602,13 +609,13 @@ static uint32_t s_mlEpoch;           // bumped on config change (joins the tag)
  * the full map width (512 px when tilemapWider, else the 256-px map
  * repeats into both halves so the extraction mask never special-cases). */
 static void ppu_mlDecodeLine0(Ppu* ppu, int ly, uint32_t slot) {
-  const int bitDepth = bitDepthsPerMode[ppu->mode][0];
-  const int hi = ppu->bgLayer[0].tilemapHigher;
-  const int wide = ppu->bgLayer[0].tilemapWider;
+  const int bitDepth = bitDepthsPerMode[ppu->mode][FF4_ML_LAYER];
+  const int hi = ppu->bgLayer[FF4_ML_LAYER].tilemapHigher;
+  const int wide = ppu->bgLayer[FF4_ML_LAYER].tilemapWider;
   uint8_t *out = s_mlVal[slot];
   for(int tx = 0; tx < 64; tx++) {
     const int lx = tx << 3;
-    uint16_t tilemapAdr = ppu->bgLayer[0].tilemapAdr + (((ly >> 3) & 0x1f) << 5 | ((lx >> 3) & 0x1f));
+    uint16_t tilemapAdr = ppu->bgLayer[FF4_ML_LAYER].tilemapAdr + (((ly >> 3) & 0x1f) << 5 | ((lx >> 3) & 0x1f));
     if((lx & 0x100) && wide) tilemapAdr += 0x400;
     if((ly & 0x100) && hi) tilemapAdr += wide ? 0x800 : 0x400;
     const uint16_t tile = ppu->vram[tilemapAdr & 0x7fff];
@@ -618,13 +625,16 @@ static void ppu_mlDecodeLine0(Ppu* ppu, int ly, uint32_t slot) {
     const int tileNum = tile & 0x3ff;
     int paletteSize = 4;
     if(bitDepth > 2) paletteSize = 16;
-    if(ppu->mode == 0) paletteNum += 0;  // layer 0: 8 * layer == 0
+    if(ppu->mode == 0) paletteNum += 8 * FF4_ML_LAYER;
     const int paletteBase = paletteSize * paletteNum;
-    const uint16_t planeAdr = (ppu->bgLayer[0].tileAdr + ((tileNum & 0x3ff) * 4 * bitDepth) + row) & 0x7fff;
+    const uint16_t planeAdr = (ppu->bgLayer[FF4_ML_LAYER].tileAdr + ((tileNum & 0x3ff) * 4 * bitDepth) + row) & 0x7fff;
     const uint32_t trcKey = ((uint32_t)planeAdr << 4) | (uint32_t)bitDepth;
     const uint32_t trcSlot = planeAdr & (LR_TRC_SLOTS - 1);
     uint8_t *raw = s_trcRaw[trcSlot];
     if(s_trcGen[trcSlot] != ppu->vramGen || s_trcKey[trcSlot] != trcKey) {
+#ifndef STM32H7B0xx
+      { extern unsigned ff4_diag_trc_miss; ff4_diag_trc_miss++; }
+#endif
       const uint16_t plane1 = ppu->vram[planeAdr];
       uint16_t plane2 = 0;
       if(bitDepth > 2) plane2 = ppu->vram[(planeAdr + 8) & 0x7fff];
@@ -681,11 +691,11 @@ FF4_ITCM_TEXT static void ppu_lrDecodeBgLine(Ppu* ppu, int layer, int y) {
   // to the direct span walk below. Config is tagged with FULL fields (two
   // words, no hashing) -- a change bumps the epoch, which joins every
   // slot's generation tag.
-  if(layer == 0 && !bigTiles && bitDepth <= 4 && mosSize == 1) {
-    const uint32_t cfgA = (uint32_t)ppu->bgLayer[0].tilemapAdr
-                        | ((uint32_t)ppu->bgLayer[0].tileAdr << 16);
-    const uint32_t cfgB = (uint32_t)(ppu->bgLayer[0].tilemapWider ? 1 : 0)
-                        | ((uint32_t)(ppu->bgLayer[0].tilemapHigher ? 1 : 0) << 1)
+  if(layer == FF4_ML_LAYER && !bigTiles && bitDepth <= 4 && mosSize == 1) {
+    const uint32_t cfgA = (uint32_t)ppu->bgLayer[FF4_ML_LAYER].tilemapAdr
+                        | ((uint32_t)ppu->bgLayer[FF4_ML_LAYER].tileAdr << 16);
+    const uint32_t cfgB = (uint32_t)(ppu->bgLayer[FF4_ML_LAYER].tilemapWider ? 1 : 0)
+                        | ((uint32_t)(ppu->bgLayer[FF4_ML_LAYER].tilemapHigher ? 1 : 0) << 1)
                         | ((uint32_t)bitDepth << 2)
                         | ((uint32_t)ppu->mode << 8);
     if(cfgA != s_mlCfgA || cfgB != s_mlCfgB) {
@@ -696,8 +706,8 @@ FF4_ITCM_TEXT static void ppu_lrDecodeBgLine(Ppu* ppu, int layer, int y) {
     if(s_mlLy[slot] != (uint16_t)ly || s_mlGen[slot] != genTag)
       ppu_mlDecodeLine0(ppu, ly, slot);
     const uint8_t *ml = s_mlVal[slot];
-    uint16_t *ov = s_lrVal[0];
-    uint8_t  *op = s_lrPrio[0];
+    uint16_t *ov = s_lrVal[FF4_ML_LAYER];
+    uint8_t  *op = s_lrPrio[FF4_ML_LAYER];
     int hasP0 = 0, hasP1 = 0;
     for(int x = 0; x < 256; x++) {
       const uint8_t b = ml[(x + hScroll) & (ML_W - 1)];
@@ -706,8 +716,8 @@ FF4_ITCM_TEXT static void ppu_lrDecodeBgLine(Ppu* ppu, int layer, int y) {
       ov[x] = v; op[x] = pr;
       if(v) { if(pr) hasP1 = 1; else hasP0 = 1; }
     }
-    s_lrHasPrio[0][0] = (uint8_t)hasP0;
-    s_lrHasPrio[0][1] = (uint8_t)hasP1;
+    s_lrHasPrio[FF4_ML_LAYER][0] = (uint8_t)hasP0;
+    s_lrHasPrio[FF4_ML_LAYER][1] = (uint8_t)hasP1;
     return;
   }
   int sx = 0;
@@ -739,6 +749,9 @@ FF4_ITCM_TEXT static void ppu_lrDecodeBgLine(Ppu* ppu, int layer, int y) {
     const uint32_t trcSlot = planeAdr & (LR_TRC_SLOTS - 1);
     uint8_t *raw = s_trcRaw[trcSlot];
     if(s_trcGen[trcSlot] != ppu->vramGen || s_trcKey[trcSlot] != trcKey) {
+#ifndef STM32H7B0xx
+      { extern unsigned ff4_diag_trc_miss; ff4_diag_trc_miss++; }
+#endif
       const uint16_t plane1 = ppu->vram[planeAdr];
       uint16_t plane2 = 0, plane3 = 0, plane4 = 0;
       if(bitDepth > 2) plane2 = ppu->vram[(planeAdr + 8) & 0x7fff];
