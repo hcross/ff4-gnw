@@ -546,6 +546,9 @@ static const uint8_t* ppu_lrBright(Ppu* ppu) {
 static void ppu_lrRefreshPal4(Ppu* ppu, const uint8_t bright[32]) {
   if(s_lrPal4Valid && s_lrPal4Gen == ppu->cgramGen && s_lrPal4Bright == ppu->brightness)
     return;
+#ifndef STM32H7B0xx
+  { extern unsigned ff4_diag_pal4_rebuild; ff4_diag_pal4_rebuild++; }
+#endif
   for(int c = 0; c < 256; c++) {
     const uint16_t col = ppu->cgram[c];
     s_lrPal4[c] = PPU_PACK565(bright[col & 0x1f],
@@ -1276,6 +1279,9 @@ FF4_ITCM_TEXT static void ppu_lrRunLine(Ppu* ppu, int y) {
   // (measured on device: a per-pixel palette shortcut inside this loop
   // COSTS 4 ms/frame on math-heavy lines — the duplicated tests outweigh
   // the savings; only the whole-line fast path above survives)
+#ifndef STM32H7B0xx
+  { extern unsigned ff4_diag_lr_slow_lines; ff4_diag_lr_slow_lines++; }
+#endif
   uint8_t psFlagPend = 0;
   for(int x = 0; x < 256; x++) {
     const int pixel = s_lrPix[0][x];
