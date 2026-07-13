@@ -1100,6 +1100,60 @@ FF4_ITCM_TEXT static void ppu_lrComposeLine(Ppu* ppu, int actMode, bool sub, con
   }
 }
 
+// R18: fused main+sub compose for math lines. When needSub is set the two
+// ppu_lrComposeLine calls repeated the whole back-to-front priority scan --
+// windows, priority tests, sprite buffer reads -- once per screen, and the
+// shared layers (BG1 + OBJ on 014-baron-castle-exterior, the R17 bench) were
+// scanned twice. One pass paints both buffer pairs; per-screen windowing is
+// preserved through separate per-entry window pointers. The main-only case
+// keeps calling ppu_lrComposeLine so no-math scenes are byte-for-byte and
+// cycle-for-cycle untouched.
+FF4_ITCM_TEXT static void ppu_lrComposeBothLines(Ppu* ppu, int actMode, const bool *bgDecoded) {
+  uint16_t *outPixM   = s_lrPix[0];
+  uint8_t  *outLayerM = s_lrLayer[0];
+  uint16_t *outPixS   = s_lrPix[1];
+  uint8_t  *outLayerS = s_lrLayer[1];
+  memset(outPixM, 0, 256 * sizeof(uint16_t));
+  memset(outLayerM, 5, 256);                      // backdrop
+  memset(outPixS, 0, 256 * sizeof(uint16_t));
+  memset(outLayerS, 5, 256);
+  for(int i = layerCountPerMode[actMode] - 1; i >= 0; i--) {
+    const int curLayer = layersPerMode[actMode][i];
+    const int curPriority = prioritysPerMode[actMode][i];
+    const bool mainOn = ppu->layer[curLayer].mainScreenEnabled;
+    const bool subOn  = ppu->layer[curLayer].subScreenEnabled;
+    if(!mainOn && !subOn) continue;
+    const uint8_t *winM = (mainOn && ppu->layer[curLayer].mainScreenWindowed) ? s_lrWin[curLayer] : NULL;
+    const uint8_t *winS = (subOn  && ppu->layer[curLayer].subScreenWindowed)  ? s_lrWin[curLayer] : NULL;
+    if(curLayer < 4) {
+      if(!bgDecoded[curLayer]) continue;
+      if(!s_lrHasPrio[curLayer][curPriority]) continue;   // no opaque pixel at this prio
+      const uint16_t *val  = s_lrVal[curLayer];
+      const uint8_t  *prio = s_lrPrio[curLayer];
+      for(int x = 0; x < 256; x++) {
+        if(prio[x] != curPriority) continue;
+        const uint16_t v = val[x];
+        if(!v) continue;
+        if(mainOn && !(winM && winM[x])) { outPixM[x] = v; outLayerM[x] = (uint8_t)curLayer; }
+        if(subOn  && !(winS && winS[x])) { outPixS[x] = v; outLayerS[x] = (uint8_t)curLayer; }
+      }
+    } else {
+      if(!s_lrSpritesAny) continue;                       // sprite-free line
+      const uint8_t *obp = ppu->objPriorityBuffer;
+      const uint8_t *obx = ppu->objPixelBuffer;
+      for(int x = 0; x < 256; x++) {
+        if(obp[x] != curPriority) continue;
+        const uint8_t v = obx[x];
+        if(!v) continue;
+        // sprites with palette color < 0xc0 are exempt from color math (id 6)
+        const uint8_t lay = (v < 0xc0) ? 6 : 4;
+        if(mainOn && !(winM && winM[x])) { outPixM[x] = v; outLayerM[x] = lay; }
+        if(subOn  && !(winS && winS[x])) { outPixS[x] = v; outLayerS[x] = lay; }
+      }
+    }
+  }
+}
+
 FF4_ITCM_TEXT static void ppu_lrRunLine(Ppu* ppu, int y) {
   // R7: per-line mode-7 starts, BEFORE the row clamp and the forced-blank
   // bail so the m7startX/Y state evolves exactly as on the legacy path
@@ -1243,11 +1297,11 @@ FF4_ITCM_TEXT static void ppu_lrRunLine(Ppu* ppu, int y) {
   // brightness LUT: cached across lines/frames (R8), rebuilt on change only
   const uint8_t *bright = ppu_lrBright(ppu);
 
-  ppu_lrComposeLine(ppu, actMode, false, bgDecoded);
   const bool mathAny = ppu->mathEnabled[0] || ppu->mathEnabled[1] || ppu->mathEnabled[2]
                     || ppu->mathEnabled[3] || ppu->mathEnabled[4] || ppu->mathEnabled[5];
   const bool needSub = ppu->addSubscreen && mathAny;
-  if(needSub) ppu_lrComposeLine(ppu, actMode, true, bgDecoded);
+  if(needSub) ppu_lrComposeBothLines(ppu, actMode, bgDecoded);   // R18: one fused scan
+  else ppu_lrComposeLine(ppu, actMode, false, bgDecoded);
 
   // R2a/R10: final packed-palette cache (shared helper, reused by R5)
   ppu_lrRefreshPal4(ppu, bright);
