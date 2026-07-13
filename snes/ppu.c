@@ -1276,6 +1276,67 @@ FF4_ITCM_TEXT static void ppu_lrRunLine(Ppu* ppu, int y) {
     return;
   }
 
+  // R17: whole-line path for the FF4 field pseudo-transparency config
+  // (add + half against the subscreen, no clip / prevent / direct color).
+  // 014-baron-castle-exterior walks with 171 of 224 lines in this exact
+  // configuration (SLOWLN diag, 2026-07-13) while the corridor bench never
+  // leaves the no-math fast path -- the general loop's per-pixel window,
+  // clip, prevent and direct-color tests are all constant-false here, and
+  // (main + sub) >> 1 on 5-bit channels cannot leave [0,31], so the clamps
+  // vanish too. The R5 stores are mirrored (walking lines almost always
+  // carry psStore: geometry moves every frame, so the skip machinery is
+  // rebuilding its baseline exactly when this path matters); CLIP flags are
+  // constant-zero here, which folds the general loop's flag logic to two
+  // bits per pixel.
+  if(ppu->clipMode == 0 && ppu->preventMathMode == 0 && !dcPossible
+     && ppu->addSubscreen && !ppu->subtractColor && ppu->halfColor) {
+#ifndef STM32H7B0xx
+    { extern unsigned ff4_diag_lr_math_lines; ff4_diag_lr_math_lines++; }
+#endif
+    uint8_t *psp = psStore ? s_psPix[row] : NULL;
+    uint8_t *px = out;
+    uint8_t flagPend = 0;
+    for(int x = 0; x < 256; x++) {
+      const int pixel = s_lrPix[0][x];
+      const int layer = s_lrLayer[0][x];
+      uint16_t v;
+      uint8_t f = 0, sp = 0;
+      if(!(layer < 6 && ppu->mathEnabled[layer])) {
+        v = s_lrPal4[pixel & 0xff];       // same packed value the fast path stores
+      } else {
+        const uint16_t c1 = ppu->cgram[pixel & 0xff];
+        const int slayer = s_lrLayer[1][x];
+        if(((slayer == 6) ? 4 : slayer) != 5) {
+          sp = (uint8_t)s_lrPix[1][x];
+          f = PS_F_MATH | PS_F_SUBV;
+          const uint16_t c2 = ppu->cgram[sp];
+          v = PPU_PACK565(bright[((c1 & 0x1f) + (c2 & 0x1f)) >> 1],
+                          bright[(((c1 >> 5) & 0x1f) + ((c2 >> 5) & 0x1f)) >> 1],
+                          bright[(((c1 >> 10) & 0x1f) + ((c2 >> 10) & 0x1f)) >> 1]);
+        } else {
+          // subscreen backdrop: math against the fixed color, no halving
+          f = PS_F_MATH;
+          int r = (c1 & 0x1f) + ppu->fixedColorR;
+          int g = ((c1 >> 5) & 0x1f) + ppu->fixedColorG;
+          int b = ((c1 >> 10) & 0x1f) + ppu->fixedColorB;
+          if(r > 31) r = 31;
+          if(g > 31) g = 31;
+          if(b > 31) b = 31;
+          v = PPU_PACK565(bright[r], bright[g], bright[b]);
+        }
+      }
+      if(psp) {
+        psp[x] = (uint8_t)pixel;
+        s_psSub[row][x] = sp;
+        if((x & 1) == 0) flagPend = f;
+        else s_psFlg[row][x >> 1] = (uint8_t)(flagPend | (f << 4));
+      }
+      PPU_STORE16(px, v);
+      px += PPU_PIXELBUF_XPITCH;
+    }
+    return;
+  }
+
   // (measured on device: a per-pixel palette shortcut inside this loop
   // COSTS 4 ms/frame on math-heavy lines — the duplicated tests outweigh
   // the savings; only the whole-line fast path above survives)
