@@ -66,7 +66,20 @@ static void sh_writeByte(StateHandler* sh, uint8_t val) {
   sh->data[sh->offset++] = val;
 }
 
+static sh_readbyte_hook_t g_sh_readbyte_hook = NULL;
+
+void sh_set_readByte_hook(sh_readbyte_hook_t hook) {
+  g_sh_readbyte_hook = hook;
+}
+
 static uint8_t sh_readByte(StateHandler* sh) {
+  /* G&W streaming load: the hook replaces the buffer read entirely; the
+   * offset keeps advancing so size bookkeeping stays coherent. */
+  if (g_sh_readbyte_hook) {
+    sh->offset++;
+    return g_sh_readbyte_hook();
+  }
+
   if(sh->offset >= sh->allocSize) {
     // reading above data (should never happen)
     return 0;

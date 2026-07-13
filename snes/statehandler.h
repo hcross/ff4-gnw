@@ -22,6 +22,14 @@ void sh_free(StateHandler* sh);
 typedef void (*sh_writebyte_hook_t)(uint8_t byte);
 void sh_set_writeByte_hook(sh_writebyte_hook_t hook);
 
+/* G&W: symmetric read-side hook fired from sh_readByte instead of the
+ * buffer read. Lets a load stream in byte-by-byte (e.g. from a LittleFS
+ * file) without a contiguous ~300 KB buffer. Every consumer funnels
+ * through sh_readByte (sh_handleByteArray/WordArray included), so the
+ * hook sees the whole stream. Pass NULL to clear. */
+typedef uint8_t (*sh_readbyte_hook_t)(void);
+void sh_set_readByte_hook(sh_readbyte_hook_t hook);
+
 void sh_handleBools(StateHandler* sh, ...);
 void sh_handleBytes(StateHandler* sh, ...);
 void sh_handleBytesS(StateHandler* sh, ...);
