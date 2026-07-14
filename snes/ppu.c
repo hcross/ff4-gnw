@@ -607,6 +607,32 @@ static uint32_t s_mlCfgA;            // layer-0 tilemapAdr | tileAdr << 16
 static uint32_t s_mlCfgB;            // wider | higher<<1 | bitDepth<<2 | mode<<8
 static uint32_t s_mlEpoch;           // bumped on config change (joins the tag)
 
+/* R20: empty-line cache for the DIRECT-decode BG layers (everything the
+ * R16 layer-0 cache does not serve -- BG2/BG3 in mode 1). A BG line whose
+ * visible window holds no opaque pixel contributes nothing to the compose
+ * (which skips a layer at a priority when s_lrHasPrio is 0), so its whole
+ * span-walk + per-pixel deposit can be skipped. Measured share of empty
+ * lines: BG3 100% on field/mode-7, 69% in combat; BG2 0-37% (2026-07-14).
+ * Emptiness is proven over the 33 map tiles the 256-px window can touch
+ * from tile T = hScroll>>3 (33 covers every sub-tile offset in that
+ * bucket), so the key (layer, ly, T, vramGen) is byte-exact: any hScroll
+ * with the same T sees the same tile set. Direct-mapped, per layer 1..3;
+ * a miss just re-scans. The scan reuses the R2b tile-row cache, so a
+ * uniformly-transparent layer (tile 0 everywhere) costs ~33 cache hits. */
+/* Indexed by (layer-1): only direct-decode layers 1..3 use this (layer 0
+ * is R16's). 128 slots (ly & 127): two visible lines 128 apart collide
+ * and just re-scan -- byte-exact, only the cache benefit shrinks. ~3 KB
+ * total, sized to fit the tight FF4 overlay BSS (the full 256-slot/4-layer
+ * form overflowed even the canonical build). */
+#define LR_EMPTY_SLOTS 128
+static uint16_t s_emptyLy[3][LR_EMPTY_SLOTS];
+static uint8_t  s_emptyT[3][LR_EMPTY_SLOTS];      // hScroll>>3, <= 127
+static uint32_t s_emptyGen[3][LR_EMPTY_SLOTS];    // vramGen ^ (cfg epoch << 24)
+static uint8_t  s_emptyState[3][LR_EMPTY_SLOTS];  // 0=invalid, 1=empty, 2=non-empty
+static uint32_t s_emptyCfgA[3];   // per-layer tilemapAdr | tileAdr<<16
+static uint32_t s_emptyCfgB[3];   // bitDepth | wide<<8 | hi<<9 | mode<<12
+static uint32_t s_emptyEpoch[3];  // bumped on a layer-config change (joins the tag)
+
 /* R16: fill one map-space line of the layer-0 cache. Same address and
  * extraction math as the direct path below, walked tile-by-tile across
  * the full map width (512 px when tilemapWider, else the 256-px map
@@ -671,6 +697,51 @@ static void ppu_mlDecodeLine0(Ppu* ppu, int ly, uint32_t slot) {
   s_mlGen[slot] = ppu->vramGen ^ (s_mlEpoch << 24);
 }
 
+/* R20 helper: is every opaque-capable pixel of this layer's visible window
+ * transparent? Scans the 33 map tiles reachable from tile T = hScroll>>3
+ * (covers any sub-tile offset in that bucket) with the exact address math
+ * of the direct span-walk below; a tile row is transparent iff its R2b raw
+ * is all zero. Gated by the caller to !bigTiles. */
+static bool ppu_lrLineEmpty(Ppu* ppu, int layer, int ly, int hScroll,
+                            int tileBits, int tileHighBit, int bitDepth) {
+  const int T0 = (hScroll >> 3);
+  for(int ti = 0; ti <= 32; ti++) {
+    const int lx = ((T0 + ti) << 3) & 0x3ff;
+    uint16_t tilemapAdr = ppu->bgLayer[layer].tilemapAdr + (((ly >> tileBits) & 0x1f) << 5 | ((lx >> tileBits) & 0x1f));
+    if((lx & tileHighBit) && ppu->bgLayer[layer].tilemapWider) tilemapAdr += 0x400;
+    if((ly & tileHighBit) && ppu->bgLayer[layer].tilemapHigher) tilemapAdr += ppu->bgLayer[layer].tilemapWider ? 0x800 : 0x400;
+    const uint16_t tile = ppu->vram[tilemapAdr & 0x7fff];
+    const int row = (tile & 0x8000) ? 7 - (ly & 0x7) : (ly & 0x7);
+    const int tileNum = tile & 0x3ff;
+    const uint16_t planeAdr = (ppu->bgLayer[layer].tileAdr + ((tileNum & 0x3ff) * 4 * bitDepth) + row) & 0x7fff;
+    const uint32_t trcKey = ((uint32_t)planeAdr << 4) | (uint32_t)bitDepth;
+    const uint32_t trcSlot = planeAdr & (LR_TRC_SLOTS - 1);
+    uint8_t *raw = s_trcRaw[trcSlot];
+    if(s_trcGen[trcSlot] != ppu->vramGen || s_trcKey[trcSlot] != trcKey) {
+      const uint16_t plane1 = ppu->vram[planeAdr];
+      uint16_t plane2 = 0, plane3 = 0, plane4 = 0;
+      if(bitDepth > 2) plane2 = ppu->vram[(planeAdr + 8) & 0x7fff];
+      if(bitDepth > 4) { plane3 = ppu->vram[(planeAdr + 16) & 0x7fff];
+                         plane4 = ppu->vram[(planeAdr + 24) & 0x7fff]; }
+      for(int col = 0; col < 8; col++) {
+        int pixel = (plane1 >> col) & 1;
+        pixel |= ((plane1 >> (8 + col)) & 1) << 1;
+        if(bitDepth > 2) { pixel |= ((plane2 >> col) & 1) << 2;
+                           pixel |= ((plane2 >> (8 + col)) & 1) << 3; }
+        if(bitDepth > 4) { pixel |= ((plane3 >> col) & 1) << 4;
+                           pixel |= ((plane3 >> (8 + col)) & 1) << 5;
+                           pixel |= ((plane4 >> col) & 1) << 6;
+                           pixel |= ((plane4 >> (8 + col)) & 1) << 7; }
+        raw[col] = (uint8_t)pixel;
+      }
+      s_trcGen[trcSlot] = ppu->vramGen;
+      s_trcKey[trcSlot] = trcKey;
+    }
+    for(int c = 0; c < 8; c++) if(raw[c]) return false;   // an opaque pixel
+  }
+  return true;
+}
+
 FF4_ITCM_TEXT static void ppu_lrDecodeBgLine(Ppu* ppu, int layer, int y) {
   // Same address/extraction math as ppu_getPixelForBgLayer, restricted to
   // modes 0/1/3 (wideTiles == bigTiles, same tileBits/highBit both axes),
@@ -722,6 +793,43 @@ FF4_ITCM_TEXT static void ppu_lrDecodeBgLine(Ppu* ppu, int layer, int y) {
     s_lrHasPrio[FF4_ML_LAYER][0] = (uint8_t)hasP0;
     s_lrHasPrio[FF4_ML_LAYER][1] = (uint8_t)hasP1;
     return;
+  }
+  /* R20: skip the whole span-walk when this layer's visible line is known
+   * all-transparent. Same gate as R16 (8-px tiles, <=4bpp); keyed
+   * (layer, ly, T=hScroll>>3, vramGen) which is byte-exact for emptiness.
+   * A non-empty verdict is cached too, so a busy layer pays the scan only
+   * on the first frame of each (ly,T,gen) and then walks directly. */
+  if(layer >= 1 && layer < 4 && !bigTiles && bitDepth <= 4 && mosSize == 1
+     && (hScroll >> 3) <= 127) {
+    const int li = layer - 1;
+    const uint32_t cfgA = (uint32_t)ppu->bgLayer[layer].tilemapAdr
+                        | ((uint32_t)ppu->bgLayer[layer].tileAdr << 16);
+    const uint32_t cfgB = (uint32_t)bitDepth
+                        | ((uint32_t)(ppu->bgLayer[layer].tilemapWider ? 1 : 0) << 8)
+                        | ((uint32_t)(ppu->bgLayer[layer].tilemapHigher ? 1 : 0) << 9)
+                        | ((uint32_t)ppu->mode << 12);
+    if(cfgA != s_emptyCfgA[li] || cfgB != s_emptyCfgB[li]) {
+      s_emptyCfgA[li] = cfgA; s_emptyCfgB[li] = cfgB; s_emptyEpoch[li]++;
+    }
+    const uint8_t T = (uint8_t)(hScroll >> 3);
+    const uint32_t slot = (uint32_t)ly & (LR_EMPTY_SLOTS - 1);
+    const uint32_t genTag = ppu->vramGen ^ (s_emptyEpoch[li] << 24);
+    if(s_emptyState[li][slot] && s_emptyLy[li][slot] == (uint16_t)ly
+       && s_emptyT[li][slot] == T && s_emptyGen[li][slot] == genTag) {
+      if(s_emptyState[li][slot] == 1) {            // known empty -> skip
+        s_lrHasPrio[layer][0] = 0; s_lrHasPrio[layer][1] = 0;
+        return;
+      }
+      // known non-empty -> fall through to the direct walk (no re-scan)
+    } else {
+      const bool empty = ppu_lrLineEmpty(ppu, layer, ly, hScroll,
+                                         tileBits, tileHighBit, bitDepth);
+      s_emptyLy[li][slot] = (uint16_t)ly;
+      s_emptyT[li][slot] = T;
+      s_emptyGen[li][slot] = genTag;
+      s_emptyState[li][slot] = empty ? 1 : 2;
+      if(empty) { s_lrHasPrio[layer][0] = 0; s_lrHasPrio[layer][1] = 0; return; }
+    }
   }
   int sx = 0;
   while(sx < 256) {
