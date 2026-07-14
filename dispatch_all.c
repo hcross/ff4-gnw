@@ -32,12 +32,16 @@
  * fixes elsewhere in this project (see CONVENTIONS.md's field-module DP
  * note); this specific call site's real DP was not independently confirmed,
  * so this defaults safely to whatever the caller's actual DP is. */
-static void ExecSound_ext_stub(Snes *snes) {
-    uint16_t dp = snes->cpu->dp;
-    uint8_t cmd_id = snes->ram[(uint16_t)(dp + 0xA9)];
-    snes->ram[0x1E05] = cmd_id;
-    snes->ram[0x1E04] = 0x01;
-}
+/* REMOVED 2026-07-14 (feat/unstub-sound): the premise no longer holds.
+ * The SPC handshake completes fine in today's emulation -- desktop proof:
+ * a title boot with $04:8004 interpreted reaches frame 400 without
+ * stalling and the DSP stream carries music (282 distinct --audio-crc
+ * values vs the constant silence CRC with the stub), and fixture 012
+ * (the historic handshake-freeze repro, IPL-only APU) advances into full
+ * combat. The stub's fake-ack function and its table entry are gone;
+ * ExecSound_ext now runs interpreted, which is what re-enables music and
+ * SFX. Kept above for history: the fake-ack design and the $13:FF12
+ * caller analysis. */
 
 /* CheckMenu ($00:81F4) REMOVED from the dispatch on 2026-07-06 (204->203):
  * same class of problem as ExecBtlGfx ($03:8085, removed 2026-06-30).
@@ -220,9 +224,13 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
      * do_fight_cmd_emu, do_multi_attack_emu) are no-op weak stubs — all damage
      * was silently swallowed.  Run in pure interpreter until helpers are ported. */
     { 0x03fe03, TfrSprites_c },  /* field */
-    { 0x048004, ExecSound_ext_stub },  /* sound: stub to unblock title (SPC wait); jsl target per ROM bytes at $00:860D */
+    /* { 0x048004, ExecSound_ext_stub } REMOVED 2026-07-14 -- sound unstubbed, see the tombstone comment above. */
     { 0x0485e1, PlayGameSfx_c },  /* sound */
-    { 0x04861e, ExecInterrupt_c },  /* sound */
+    /* { 0x04861e, ExecInterrupt_c } REMOVED 2026-07-14: registry-flagged
+     * false-L2 suspect (writes ram[0x2140..3] instead of the APU in-ports,
+     * Pitfall 13) -- with sound now live that class of bug would eat SPC
+     * mailbox commands. Interpreted until requalified with --audio-crc
+     * evidence (D04861E RETIRED). */
     { 0x088690, LoadTitleGfx_c },  /* field */
     { 0x08885e, TfrTitleCrystalTiles_c },  /* field */
     { 0x0e8b3c, CheckBattle_c },  /* field */
@@ -503,5 +511,10 @@ __attribute__((weak)) void update_lava_anim_emu(Snes *snes) { (void)snes; }  /* 
 __attribute__((weak)) void update_water_anim_emu(Snes *snes) { (void)snes; }  /* first needed by field/UpdateWaterLavaAnim.c */
 __attribute__((weak)) void load_whirlpool_pal_emu(Snes *snes) { (void)snes; }  /* first needed by field/LoadOverworldLeviathan.c */
 __attribute__((weak)) void draw_whirlpool_emu(Snes *snes) { (void)snes; }  /* first needed by field/LoadOverworldLeviathan.c */
-__attribute__((weak)) void ExecSound_ext_emu(Snes *snes) { (void)snes; }  /* first needed by field/LoadMapStack.c */
+/* Real delegation since 2026-07-14 (was a weak no-op that swallowed the
+ * sound command of every ported caller -- field/LoadMapStack.c sends the
+ * map-transition music change through here). run_emulated_func advances
+ * the whole system via snes_runCycles, so the SPC answers the handshake
+ * during the spin, same contract as the other DELEG wrappers. */
+void ExecSound_ext_emu(Snes *snes) { run_emulated_func(snes, 0x048004); }
 __attribute__((weak)) void decode_sub_tilemap_emu(Snes *snes) { (void)snes; }  /* first needed by field/DecodeBG1Tilemap.c */
