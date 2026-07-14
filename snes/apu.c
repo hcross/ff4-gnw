@@ -30,19 +30,8 @@ static const uint8_t bootRom[0x40] = {
 static void apu_cycle(Apu* apu);
 static void apu_syncTimers(Apu* apu);
 
-#ifdef FF4_PORT_STATIC_SNES
-/* G&W: singleton in overlay BSS -- the 85 KB MCU heap cannot
- * carry the LakeSnes components (the Apu alone embeds 64 KB of
- * SPC ram); same contract as the Snes/Ppu statics. */
-static Apu _ff4_apu_storage;
-#endif
-
 Apu* apu_init(Snes* snes) {
-  #ifdef FF4_PORT_STATIC_SNES
-  Apu* apu = &_ff4_apu_storage;
-#else
   Apu* apu = malloc(sizeof(Apu));
-#endif
   apu->snes = snes;
   apu->spc = spc_init(apu, apu_spcRead, apu_spcWrite, apu_spcIdle);
   apu->dsp = dsp_init(apu);
@@ -52,9 +41,7 @@ Apu* apu_init(Snes* snes) {
 void apu_free(Apu* apu) {
   spc_free(apu->spc);
   dsp_free(apu->dsp);
-  #ifndef FF4_PORT_STATIC_SNES
   free(apu);
-#endif
 }
 
 void apu_reset(Apu* apu) {
