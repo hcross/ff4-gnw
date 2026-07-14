@@ -19,10 +19,19 @@ you, no dynamic process model, no virtual memory.
 
 - **No assumption of a large heap.** The SNES emulator core (LakeSnes,
   see [ADR-002 in `ff4-port`](https://github.com/hcross/ff4-port/blob/main/docs/adr/adr-002-lakesnes-upstream.md))
-  normally allocates its state dynamically. On this device, everything is
-  **statically allocated** instead (`-DFF4_PORT_STATIC_SNES`) — a single,
-  fixed-size instance, sized once at compile time, because there's no
-  general-purpose heap to assume is big enough.
+  normally allocates its state dynamically. On this device, nearly
+  everything is **statically allocated** instead
+  (`-DFF4_PORT_STATIC_SNES`) — single, fixed-size instances, sized once
+  at compile time, because the firmware's general-purpose heap is small
+  (~85 KB) and shared with the retro-go frontend. Two footnotes, both
+  learned the hard way (2026-07-14, commit `a411391`): the
+  controller-input component is **two** instances, one per SNES
+  controller port — a naive single static aliased pad 2 onto pad 1,
+  caught by framebuffer-CRC bisect; and the one deliberate exception is
+  the APU's 64 KB of SPC RAM, which fits no static region (the overlay's
+  slack is ~15 KB, DTCM is full, AHB is uncached) and stays on the heap
+  — freeing it is an overlay-budget decision, parked on branch
+  `fix/static-snes-components`.
 - **ROM doesn't fit in RAM.** The original game ROM is read directly from
   external flash memory (XIP — execute/read in place) rather than loaded
   into RAM first, because the on-device RAM budget has no room to spare
@@ -33,7 +42,13 @@ you, no dynamic process model, no virtual memory.
   precisely why desktop validation timing numbers (see `ff4-port`'s
   [`docs/workflow/validation-oracle.md`](https://github.com/hcross/ff4-port/blob/main/docs/workflow/validation-oracle.md))
   cannot be used to predict on-device performance — only a real device
-  run can answer "is this fast enough."
+  run can answer "is this fast enough." By 2026-07-14 this lesson had
+  bitten three times, hardening it into a rule: desktop profiling is
+  disqualified even for *ranking* device cost buckets (e.g. the compose
+  stage weighs ~10× less on the M7 than on the host, relative to its
+  neighbors). Desktop runs remain valid for **finding** code paths and
+  for byte-exactness proofs; only an on-device measurement ranks or
+  sizes a cost.
 
 ## `retro-go-sd` — the firmware this project plugs into
 
@@ -47,6 +62,38 @@ to provide `ff4_init`/`ff4_step`/`ff4_blit_to_lcd` and friends (`main.c`)
 naming scheme (`ff4_redefines`, via `objcopy --redefine-syms`) so this
 port's copy of the SNES core doesn't collide with other homebrew cores
 (`smw`, `zelda3`) also linked into the same firmware image.
+
+## Savestates on the device
+
+The desktop harness can hold a whole ~270 KB savestate in one buffer;
+the device cannot (see the heap point above). Device savestates
+therefore **stream**: LakeSnes's state serializer
+(`snes/statehandler.c`) exposes a byte-level **write hook** (added
+for the live-device state exfiltration pipeline — see
+[`ff4-port/FIXTURES.md`](https://github.com/hcross/ff4-port/blob/main/FIXTURES.md))
+and, since commit `200212e`, a symmetric **read hook**. Every consumer
+funnels through `sh_readByte`, so an installed hook can feed a load
+byte-by-byte from a file through a small (512-byte) window instead of
+requiring the whole state contiguous in RAM.
+
+The pause-menu save/load integration built on these hooks lives in the
+retro-go-sd scaffold branch (local commits `34ede4ac..a3792a60`, not
+yet upstream), not in this repository. Two of its constraints are worth
+knowing on the FF4 side, because they shaped the hook design:
+
+- **Savestates are TAMP-compressed on the device filesystem** (~4:1 —
+  273 KB → 67.7 KB measured, retro-go-sd `ce6da19d`), which is what
+  lets all four pause-menu slots fit the 768 KB internal LittleFS.
+- **The save runs two passes so the compressed length is known before
+  the header is written** (retro-go-sd `258fd02b`), instead of seeking
+  back to patch the header afterwards: a post-stream `fseek` rewrite on
+  a LittleFS file rewrites its whole CTZ block chain and roughly
+  doubles its on-disk footprint — the "no more free space" trap.
+
+A state saved from the pause menu loads **byte-identical** in the
+desktop harness once extracted — the extraction recipe (and the second
+device→desktop fixture pipeline it enables) is documented in
+[`ff4-port/FIXTURES.md`](https://github.com/hcross/ff4-port/blob/main/FIXTURES.md).
 
 ## Continuing from here
 
