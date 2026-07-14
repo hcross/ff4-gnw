@@ -78,7 +78,12 @@ static int16_t dsp_getSample(Dsp* dsp, int ch);
 static void dsp_handleNoise(Dsp* dsp);
 
 Dsp* dsp_init(Apu* apu) {
+  #ifdef FF4_PORT_STATIC_SNES
+  static Dsp _ff4_dsp_storage;
+  Dsp* dsp = &_ff4_dsp_storage;
+#else
   Dsp* dsp = malloc(sizeof(Dsp));
+#endif
   dsp->apu = apu;
   return dsp;
 }

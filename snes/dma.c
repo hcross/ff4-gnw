@@ -31,7 +31,12 @@ static void dma_initHdma(Dma* dma, bool doSync, int cpuCycles);
 static void dma_doHdma(Dma* dma, bool doSync, int cpuCycles);
 
 Dma* dma_init(Snes* snes) {
+  #ifdef FF4_PORT_STATIC_SNES
+  static Dma _probe_storage;
+  Dma* dma = &_probe_storage;
+#else
   Dma* dma = malloc(sizeof(Dma));
+#endif
   dma->snes = snes;
   return dma;
 }

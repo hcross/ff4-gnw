@@ -38,7 +38,12 @@ static void spc_doOpcode(Spc* spc, uint8_t opcode);
 // addressing modes and opcode functions not declared, only used after defintions
 
 Spc* spc_init(void* mem, SpcReadHandler read, SpcWriteHandler write, SpcIdleHandler idle) {
+  #ifdef FF4_PORT_STATIC_SNES
+  static Spc _probe_storage;
+  Spc* spc = &_probe_storage;
+#else
   Spc* spc = malloc(sizeof(Spc));
+#endif
   spc->mem = mem;
   spc->read = read;
   spc->write = write;

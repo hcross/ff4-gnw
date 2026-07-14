@@ -10,7 +10,17 @@
 #include "statehandler.h"
 
 Input* input_init(Snes* snes) {
+  #ifdef FF4_PORT_STATIC_SNES
+  /* TWO instances -- snes_init creates one Input per controller port. A
+   * single static here aliases pad 2 onto pad 1 (auto-joypad clobber,
+   * found by FBCRC bisect 2026-07-14); rotate across the exactly-two
+   * init calls of the singleton contract. */
+  static Input _ff4_input_storage[2];
+  static int _ff4_input_next = 0;
+  Input* input = &_ff4_input_storage[_ff4_input_next++ & 1];
+#else
   Input* input = malloc(sizeof(Input));
+#endif
   input->snes = snes;
   // TODO: handle (where?)
   input->type = 1;

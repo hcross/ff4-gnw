@@ -47,7 +47,12 @@ static void cpu_doOpcode(Cpu* cpu, uint8_t opcode);
 // addressing modes and opcode functions not declared, only used after defintions
 
 Cpu* cpu_init(void* mem, CpuReadHandler read, CpuWriteHandler write, CpuIdleHandler idle) {
+  #ifdef FF4_PORT_STATIC_SNES
+  static Cpu _probe_storage;
+  Cpu* cpu = &_probe_storage;
+#else
   Cpu* cpu = malloc(sizeof(Cpu));
+#endif
   cpu->mem = mem;
   cpu->read = read;
   cpu->write = write;

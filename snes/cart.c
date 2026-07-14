@@ -92,7 +92,15 @@ void cart_load(Cart* cart, int type, uint8_t* rom, int romSize, int ramSize) {
   if(cart->ram != NULL) free(cart->ram);
   cart->romSize = romSize;
   if(ramSize > 0) {
+#ifdef FF4_PORT_STATIC_SNES
+    /* FF4 carries 8 KB of battery SRAM; keep it off the 85 KB MCU heap.
+     * Larger carts (not our case) fall back to malloc. */
+    static uint8_t _ff4_sram_storage[0x2000];
+    cart->ram = (ramSize <= sizeof(_ff4_sram_storage))
+        ? _ff4_sram_storage : malloc(ramSize);
+#else
     cart->ram = malloc(ramSize);
+#endif
     memset(cart->ram, 0, ramSize);
   } else {
     cart->ram = NULL;
