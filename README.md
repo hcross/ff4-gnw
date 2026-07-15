@@ -69,8 +69,9 @@ unreviewed draft.
   "Savestates on the device".
 - Known translation-patch variants are playable: the ROM is identified by
   CRC32 at `ff4_init` and the matching dispatch profile is armed. First
-  variant: J2e EN v3.21, desktop-validated (device bench pending). See
-  `rom_ident.{c,h}` in the table above.
+  variant: J2e EN v3.21, device-validated (2026-07-15 bench — evidence in
+  `ff4-port/patches/manifest.json`). See `rom_ident.{c,h}` in the table
+  above.
 
 ## How to build and flash
 
@@ -100,10 +101,12 @@ The ROM (`CRC32 CAA15E97`, FF4 JP 1.1) goes at
 `sd_content/roms/homebrew/ff4.sfc`. It is gitignored and is wiped by
 `make clean` — keep a copy outside `sd_content/`. Known translation-patch
 variant images (e.g. J2e EN v3.21 as `ff4-j2e.sfc`, built per
-`ff4-port/patches/README.md`) are staged the same way and selected by the
-scaffold's persisted **Language** pause-menu option (applied at the next
-launch); an image with an unknown CRC32 is refused at boot under
-`-DFF4_REQUIRE_KNOWN_ROM`.
+`ff4-port/patches/README.md`) are staged the same way and switched at
+runtime via the scaffold's **Language** pause-menu entry (confirmation
+dialog, then automatic restart into the other language); an image with an
+unknown CRC32 is refused at boot under `-DFF4_REQUIRE_KNOWN_ROM`. Baking
+both language images needs `EXTFLASH_SIZE_MB=8` — see the flag note in
+[`docs/build-and-flash-explained.md`](docs/build-and-flash-explained.md).
 
 `-DFF4_AUTOBOOT=1` activates the diagnostic harness in
 `Core/Src/porting/ff4/main_ff4.c`: the device autoboots straight into FF4 and

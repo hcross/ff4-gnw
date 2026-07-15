@@ -33,6 +33,16 @@ make INTFLASH_BANK=2 FF4_AUTOBOOT=1 SD_CARD=0 EXTFLASH_SIZE_MB=4 \
   modification present on the device (see the README's mention of a
   "64 MB extflash mod" for the units this project has been validated on)
   — a mismatch here doesn't fail loudly, it produces a broken image.
+  `4` is enough for the single vanilla-ROM build; the **dual-language**
+  build (vanilla + the 2 MiB J2e variant image both baked into FrogFS —
+  a 3.65 MB FrogFS image as bench-measured on 2026-07-15, and the
+  bench-validated translation-variant configuration) needs
+  `EXTFLASH_SIZE_MB=8`: at `4` the FrogFS reserve overflows and the
+  build fails hard. To keep a 4 MB build while variant
+  images sit in `sd_content/`, exclude them from baking via
+  `sd_content/.frogfsignore` (one fnmatch pattern per line, relative to
+  `roms/`; the scaffold ships the J2e exclusion as a commented example
+  — scaffold commit `39b08f34`).
 - **`CHECK_DIRTY_SUBMODULE=0`** — the retro-go-sd build normally refuses to
   build if any of its submodules have uncommitted changes, as a safety
   check for its own release process. This project's development flow

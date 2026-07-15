@@ -63,6 +63,18 @@ naming scheme (`ff4_redefines`, via `objcopy --redefine-syms`) so this
 port's copy of the SNES core doesn't collide with other homebrew cores
 (`smw`, `zelda3`) also linked into the same firmware image.
 
+The scaffold also owns the **Language** pause-menu entry that switches
+between the vanilla JP ROM and a translation-variant image
+(confirmation dialog, then an automatic reset into the other language —
+scaffold branch `feat/ff4-port-scaffold`, commit `cb67a933`). One
+fork-specific trap it had to route around, worth knowing before adding
+any new per-app setting: the generic `odroid_settings_int32_get/set`
+API is a **no-op stub** in this fork — only the dedicated
+`persistent_config_t` fields actually persist — so a setting stored
+through it "works" in the menu and silently resets at every boot. The
+language choice therefore lives in a dedicated one-byte LittleFS file
+(`/ff4_lang`) owned by the FF4 app.
+
 ## Savestates on the device
 
 The desktop harness can hold a whole ~270 KB savestate in one buffer;
@@ -89,6 +101,14 @@ knowing on the FF4 side, because they shaped the hook design:
   back to patch the header afterwards: a post-stream `fseek` rewrite on
   a LittleFS file rewrites its whole CTZ block chain and roughly
   doubles its on-disk footprint — the "no more free space" trap.
+
+Since the Language option landed (2026-07-15), the slots are also
+**namespaced per language**: the scaffold points the app descriptor's
+`romPath` at the active language's ROM file, and every derived
+savestate/screenshot path follows. Handler-side path rewriting does not
+work — the slot UI derives its existence checks and previews from
+`romPath`, so suffixed saves become invisible to it (scaffold commit
+`cb67a933`).
 
 A state saved from the pause menu loads **byte-identical** in the
 desktop harness once extracted — the extraction recipe (and the second
