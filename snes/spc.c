@@ -52,7 +52,11 @@ Spc* spc_init(void* mem, SpcReadHandler read, SpcWriteHandler write, SpcIdleHand
 }
 
 void spc_free(Spc* spc) {
+#ifndef FF4_PORT_STATIC_SNES
   free(spc);
+#else
+  (void)spc;  /* static storage (see spc_init) -- freeing it aborts */
+#endif
 }
 
 void spc_reset(Spc* spc, bool hard) {

@@ -42,7 +42,11 @@ Dma* dma_init(Snes* snes) {
 }
 
 void dma_free(Dma* dma) {
+#ifndef FF4_PORT_STATIC_SNES
   free(dma);
+#else
+  (void)dma;  /* static storage (see dma_init) -- freeing it aborts */
+#endif
 }
 
 void dma_reset(Dma* dma) {

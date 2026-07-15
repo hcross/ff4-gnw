@@ -30,7 +30,11 @@ Input* input_init(Snes* snes) {
 }
 
 void input_free(Input* input) {
+#ifndef FF4_PORT_STATIC_SNES
   free(input);
+#else
+  (void)input;  /* static storage (see input_init) -- freeing it aborts */
+#endif
 }
 
 void input_reset(Input* input) {

@@ -61,7 +61,11 @@ Cpu* cpu_init(void* mem, CpuReadHandler read, CpuWriteHandler write, CpuIdleHand
 }
 
 void cpu_free(Cpu* cpu) {
+#ifndef FF4_PORT_STATIC_SNES
   free(cpu);
+#else
+  (void)cpu;  /* static storage (see cpu_init) -- freeing it aborts */
+#endif
 }
 
 void cpu_reset(Cpu* cpu, bool hard) {

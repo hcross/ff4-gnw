@@ -89,7 +89,11 @@ Dsp* dsp_init(Apu* apu) {
 }
 
 void dsp_free(Dsp* dsp) {
+#ifndef FF4_PORT_STATIC_SNES
   free(dsp);
+#else
+  (void)dsp;  /* static storage (see dsp_init) -- freeing it aborts */
+#endif
 }
 
 void dsp_reset(Dsp* dsp) {
