@@ -45,7 +45,16 @@ The dispatch table is an equivalence proof against **one** ROM image
 instead, `rom_ident.c` CRCs the image once at `ff4_init` and arms
 `ff4_dispatch_gate[]`: a gated slot falls through to the interpreter —
 which reads the patched bytes and is therefore always correct — and is
-counted in `ff4_dispatch_gated`, separately from the miss counters. The
+counted in `ff4_dispatch_gated`, separately from the miss counters. A
+slot lands in a profile's gated set for one of two reasons: the patch
+**provably** touched the routine's bytes (or those of an asm callee its
+native body absorbed — the transitive callee closure), or the routine's
+byte range could not be resolved from the reference disassembly at all,
+in which case it is gated **fail-closed**. DELEG wrappers are never
+gated — they already execute the (patched) asm via `run_emulated_func`.
+Per-variant gated tallies and the review of each gated set live in the
+variant's entry in
+[`ff4-port/patches/manifest.json`](https://github.com/hcross/ff4-port/blob/main/patches/manifest.json). The
 per-variant profiles (`rom_profiles.{c,h}`) are **generated** by the
 umbrella repo's `registry/patch_impact.py`; never hand-edit them. For an
 unknown image, the device build refuses to boot
