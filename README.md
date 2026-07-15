@@ -40,7 +40,8 @@ unreviewed draft.
 | Directory / file | Nature | G&W-specific? |
 |---|---|---|
 | `battle/`, `field/`, `menu/`, `cutscene/`, `sound/` | Validated C translations of FF4 routines (current count: see [`DISPATCH_REGISTRY.md`](https://github.com/hcross/ff4/blob/main/DISPATCH_REGISTRY.md) in the umbrella repo — generated, changes as routines are ported) | No — pure 65816 logic, no hardware dependency |
-| `dispatch_all.{c,h}` | Binary-search dispatch table; `ff4_dispatch_try` is called on every JSR/JSL | No — generic dispatch mechanism |
+| `dispatch_all.{c,h}` | Binary-search dispatch table; `ff4_dispatch_try` is called on every JSR/JSL. Also holds the per-slot variant gate array (`ff4_dispatch_gate[]`, see next row) | No — generic dispatch mechanism |
+| `rom_ident.{c,h}`, `rom_profiles.{c,h}` | ROM identity + per-variant dispatch profiles: full-file CRC32 at `ff4_init` selects the profile that gates patch-invalidated dispatches back to the interpreter; unknown ROMs are refused on device (`FF4_REQUIRE_KNOWN_ROM`). `rom_profiles.{c,h}` are **generated** by the umbrella repo's `registry/patch_impact.py` — do not hand-edit. See [`docs/dispatch-integration.md`](docs/dispatch-integration.md) and ADR-008 in `ff4-port` | No — generic mechanism (the refusal UI lives in the retro-go-sd scaffold) |
 | `ff4_helpers.c` | `*_emu` stubs for routines not yet translated; the few already translated ones delegate to their `_c` body | Partially — `update_ctrl_field_emu` reconstructs G&W input; most stubs are generic weak no-ops |
 | `main.c` | `ff4_init`, `ff4_step`, `ff4_blit_to_lcd` (BGR888→RGB565) | **Yes** — G&W LCD wiring |
 | `snes/` | LakeSnes SNES core, G&W-patched: static allocation under `-DFF4_PORT_STATIC_SNES`, ROM read XIP from extflash, dispatch hook in `cpu.c` JSR/JSL cases | **Yes** — G&W patches behind `#ifdef FF4_PORT_STATIC_SNES` |
@@ -59,9 +60,17 @@ unreviewed draft.
   of why a quick manual count is easy to get wrong — see the umbrella
   repo's [`docs/primer/00-glossary.md`](https://github.com/hcross/ff4/blob/main/docs/primer/00-glossary.md#project-specific-terms)
   for what "dispatched" and the maturity levels mean).
-- SPC700 mailbox handshake left to LakeSnes' real APU; `InitSound_ext` and
-  `ExecSound_ext` are in the `gen_dispatch.py` skip list (see commit 17823b7).
-- No audio output, no save-state loading yet.
+- Sound is live: the SPC700/DSP run in LakeSnes' real APU, and the
+  historical `ExecSound_ext` no-op stub was removed (`7420465`,
+  2026-07-14 — music and SFX play, proven via the desktop harness's
+  `--audio-crc` channel).
+- Device savestates: 4 pause-menu slots, streamed and TAMP-compressed —
+  see [`docs/firmware-and-hardware.md`](docs/firmware-and-hardware.md),
+  "Savestates on the device".
+- Known translation-patch variants are playable: the ROM is identified by
+  CRC32 at `ff4_init` and the matching dispatch profile is armed. First
+  variant: J2e EN v3.21, desktop-validated (device bench pending). See
+  `rom_ident.{c,h}` in the table above.
 
 ## How to build and flash
 
@@ -89,7 +98,12 @@ gnwmanager monitor   # observe "FF4 live: host=… dispatch=H/T"
 
 The ROM (`CRC32 CAA15E97`, FF4 JP 1.1) goes at
 `sd_content/roms/homebrew/ff4.sfc`. It is gitignored and is wiped by
-`make clean` — keep a copy outside `sd_content/`.
+`make clean` — keep a copy outside `sd_content/`. Known translation-patch
+variant images (e.g. J2e EN v3.21 as `ff4-j2e.sfc`, built per
+`ff4-port/patches/README.md`) are staged the same way and selected by the
+scaffold's persisted **Language** pause-menu option (applied at the next
+launch); an image with an unknown CRC32 is refused at boot under
+`-DFF4_REQUIRE_KNOWN_ROM`.
 
 `-DFF4_AUTOBOOT=1` activates the diagnostic harness in
 `Core/Src/porting/ff4/main_ff4.c`: the device autoboots straight into FF4 and

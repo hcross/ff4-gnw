@@ -38,6 +38,21 @@ opcode `$DC`) is deliberately *not* intercepted — see
 for why, and why some routines that end in a tail jump must stay
 interpreted for exactly that reason.
 
+## Variant ROMs — the per-slot gate array
+
+The dispatch table is an equivalence proof against **one** ROM image
+(vanilla JP 1.1). When a known translation-patch variant is loaded
+instead, `rom_ident.c` CRCs the image once at `ff4_init` and arms
+`ff4_dispatch_gate[]`: a gated slot falls through to the interpreter —
+which reads the patched bytes and is therefore always correct — and is
+counted in `ff4_dispatch_gated`, separately from the miss counters. The
+per-variant profiles (`rom_profiles.{c,h}`) are **generated** by the
+umbrella repo's `registry/patch_impact.py`; never hand-edit them. For an
+unknown image, the device build refuses to boot
+(`FF4_REQUIRE_KNOWN_ROM`) and the desktop harness warns and runs
+interpreter-only. Full decision record:
+[ADR-008 in `ff4-port`](https://github.com/hcross/ff4-port/blob/main/docs/adr/adr-008-translation-patches-crc-profiles.md).
+
 ## Regenerating the table
 
 `gen_dispatch.py` used to regenerate `dispatch_all.{c,h}` automatically
