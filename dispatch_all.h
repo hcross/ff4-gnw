@@ -238,3 +238,14 @@ extern int ff4_dispatch_enabled;  /* 1=native dispatch (device default), 0=pure 
 extern void (*ff4_dispatch_trace)(uint32_t pc);      /* NULL on device; A/B oracle per-hit trace hook */
 extern int  (*ff4_dispatch_filter)(uint32_t pc);     /* NULL on device; return 0 to force interpretation of a hook */
 extern void (*ff4_dispatch_miss_trace)(uint32_t pc); /* NULL on device; miss profiler hook */
+
+/* Per-slot correctness gate (ROM-variant dispatch profiles, translation-patch
+ * ADR; armed by rom_ident.c at ff4_init). A set slot means the loaded ROM
+ * variant rewrote this routine's original asm: the native body (proven
+ * against vanilla only) must not run, the call falls through to the
+ * interpreter. Distinct from ff4_dispatch_filter, which stays owned by the
+ * desktop harness (oracle --exclude/--only) and composes with the gate. */
+extern uint8_t ff4_dispatch_gate[FF4_DISPATCH_COUNT];
+extern uint32_t ff4_dispatch_gated;   /* gated fall-throughs (NOT misses)    */
+void ff4_dispatch_gate_clear(void);
+int  ff4_dispatch_gate_pc(uint32_t pc); /* 1 = found & gated, 0 = unknown pc */

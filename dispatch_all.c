@@ -358,6 +358,30 @@ int (*ff4_dispatch_filter)(uint32_t pc) = 0;
  * and produce the hot-miss list for the next porting sprint. */
 void (*ff4_dispatch_miss_trace)(uint32_t pc) = 0;
 
+/* Per-slot correctness gate (ROM-variant dispatch profiles -- see
+ * dispatch_all.h and rom_ident.c). All-zero by default and on the vanilla
+ * ROM, so the added cost on a dispatch hit is one predictably-false byte
+ * test. A gated fall-through is deliberate interpretation of patched asm:
+ * it increments ff4_dispatch_gated, NOT the miss counters (miss stats feed
+ * the porting hot-list and must stay clean of profile noise). */
+uint8_t ff4_dispatch_gate[FF4_DISPATCH_COUNT] = {0};
+uint32_t ff4_dispatch_gated = 0;
+
+void ff4_dispatch_gate_clear(void) {
+    for (int i = 0; i < FF4_DISPATCH_COUNT; i++) ff4_dispatch_gate[i] = 0;
+    ff4_dispatch_gated = 0;
+}
+
+int ff4_dispatch_gate_pc(uint32_t pc) {
+    for (int i = 0; i < FF4_DISPATCH_COUNT; i++) {
+        if (ff4_dispatch_table[i].pc == pc) {
+            ff4_dispatch_gate[i] = 1;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* Cycle-accounting for the desktop A/B oracle (ADR 0001 / oracle hardening).
  *
  * A dispatched C body runs in ~0 SNES cycles (only the JSR/JSL prologue + the
@@ -448,6 +472,10 @@ int ff4_dispatch_try(Snes *snes, uint32_t pc) {
      * original pc, then rewrites banks, leaving the table unsorted). */
     for (int i = 0; i < FF4_DISPATCH_COUNT; i++) {
         if (ff4_dispatch_table[i].pc == pc) {
+            if (ff4_dispatch_gate[i]) {
+                ff4_dispatch_gated++;
+                return 0;  /* ROM-variant gate: interpret the patched asm */
+            }
             if (ff4_dispatch_filter && !ff4_dispatch_filter(pc))
                 return 0;  /* excluded: fall through to pure interpretation */
             ff4_dispatch_hits++;

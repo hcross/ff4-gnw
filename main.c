@@ -8,11 +8,35 @@
 
 #include <stddef.h>
 #include <stdbool.h>
+#ifndef FF4_REQUIRE_KNOWN_ROM
+#include <stdio.h>  /* unknown-ROM warning on the tolerant (desktop) path */
+#endif
 #include "snes/snes.h"
+#include "rom_ident.h"
+#include "dispatch_all.h"
 
 Snes *ff4_snes = NULL;
 
 bool ff4_init(const uint8_t *rom_bytes, int rom_length) {
+    /* Identify the image and arm the matching dispatch profile BEFORE
+     * anything touches the emulator (translation-patch ADR, rom_ident.h).
+     * Policy on an unknown image differs per target:
+     *   - device (FF4_REQUIRE_KNOWN_ROM, set by the scaffold build): refuse;
+     *     the scaffold renders the refusal screen from the ident accessors;
+     *   - desktop: run it, but with the native dispatch fully disabled --
+     *     the pure interpreter is slow but correct on any lineage. */
+    ff4_rom_ident_t ident = ff4_rom_identify(rom_bytes, rom_length);
+    if (ident == FF4_ROM_UNKNOWN) {
+#ifdef FF4_REQUIRE_KNOWN_ROM
+        return false;
+#else
+        fprintf(stderr,
+                "ff4: unknown ROM (crc32 %08X) -- native dispatch disabled, "
+                "running pure interpreter\n",
+                (unsigned)ff4_rom_ident_crc32());
+        ff4_dispatch_enabled = 0;
+#endif
+    }
     ff4_snes = snes_init();
     if (ff4_snes == NULL) {
         return false;
