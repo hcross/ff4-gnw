@@ -53,7 +53,7 @@ __attribute__((weak)) void check_strong_elem_emu(Snes *snes) { (void)snes; }
 /* check_timer_emu: delegates to CheckTimer_c ($03:9788, already dispatched). */
 void check_timer_emu(Snes *snes) { CheckTimer_c(snes); }
 __attribute__((weak)) void check_weak_elem_emu(Snes *snes) { (void)snes; }
-__attribute__((weak)) void clear_text_emu(Snes *snes) { (void)snes; }
+void clear_text_emu(Snes *snes) { run_emulated_func(snes, 0x14FD06u); } /* menu display bug: was no-op weak stub */
 void div16_emu(Snes *snes) { Div16_c(snes); }           /* F1: was no-op weak stub */
 __attribute__((weak)) void do_fight_cmd_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void do_magic_attack_emu(Snes *snes) { (void)snes; }
@@ -341,8 +341,8 @@ void update_ctrl_emu(Snes *snes) {
     update_ctrl_field_emu(snes);
 }
 __attribute__((weak)) void update_equip_emu(Snes *snes) { (void)snes; }
-__attribute__((weak)) void update_scroll_regs_emu(Snes *snes) { (void)snes; }
-__attribute__((weak)) void update_window_color_emu(Snes *snes) { (void)snes; }
+void update_scroll_regs_emu(Snes *snes) { run_emulated_func(snes, 0x14FD0Cu); } /* menu display bug: was no-op weak stub */
+void update_window_color_emu(Snes *snes) { run_emulated_func(snes, 0x14FD09u); } /* menu display bug: was no-op weak stub */
 __attribute__((weak)) void update_zoom_pal_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void wait_frame_emu(Snes *snes) { (void)snes; }
 __attribute__((weak)) void wait_vblank_event_emu(Snes *snes) { (void)snes; }
