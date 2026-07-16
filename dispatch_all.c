@@ -225,7 +225,25 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
      * was silently swallowed.  Run in pure interpreter until helpers are ported. */
     { 0x03fe03, TfrSprites_c },  /* field */
     /* { 0x048004, ExecSound_ext_stub } REMOVED 2026-07-14 -- sound unstubbed, see the tombstone comment above. */
-    { 0x0485e1, PlayGameSfx_c },  /* sound */
+    /* { 0x0485e1, PlayGameSfx_c } REMOVED 2026-07-16: SAME bug as ExecInterrupt_c
+     * below -- PlayGameSfx_c writes/polls ram[0x2140..3] (WRAM $7E:2140) instead
+     * of the APU I/O ports hAPUIO0-3 (MMIO $2140-3, reached via the bus). The
+     * asm ($04:85E1) does `sta hAPUIO0` then `@85f7: cmp hAPUIO0 / bne @85f7`:
+     * it sends the SFX command to the SPC and spins until the SPC echoes the
+     * command byte back (the standard SNES<->SPC handshake). The C body never
+     * touches the real ports, so the SFX is never sent AND its poll
+     * (`while (ram[0x2140] != ram[0x00])`) exits immediately (it just wrote
+     * ram[0x2140]=ram[0x00]) -- the handshake is skipped entirely. Battle attack
+     * animations are paced by that SFX handshake, so with the native body the
+     * fire/spell attack animation (e.g. Red Fang -> Fire2) is SKIPPED: combat
+     * jumps straight from the action to the enemy death animation. Reproduced
+     * headless (native: 0 orange fire px; pure interpreter: ~24k orange px at
+     * the explosion) on BOTH vanilla (006) and J2e (j2e-combat-001); excluding
+     * this single hook restores the animation. Retired (interpreted) rather than
+     * fixed to the bus, matching ExecInterrupt_c -- native APU-handshake polling
+     * from a mono-frame dispatched body is exactly the fragile path the sound
+     * work already stumbled on; triggering the SPC has ~0 perf value. Requalify
+     * with --audio-crc evidence. See KNOWN_FINDINGS F14. (D0485E1 RETIRED.) */
     /* { 0x04861e, ExecInterrupt_c } REMOVED 2026-07-14: registry-flagged
      * false-L2 suspect (writes ram[0x2140..3] instead of the APU in-ports,
      * Pitfall 13) -- with sound now live that class of bug would eat SPC
