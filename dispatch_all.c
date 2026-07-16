@@ -270,9 +270,29 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x14fb1e, WipeScanlineTbl_c },  /* field */
     { 0x14fd00, InitCtrl_ext2_c },  /* menu */
     { 0x14fd03, UpdateCtrl_ext_c },  /* menu */
-    { 0x14fd06, ClearText_ext_c },  /* menu */
-    { 0x14fd09, UpdateWindowColor_ext_c },  /* menu */
-    { 0x14fd0c, UpdateScrollRegs_ext_c },  /* menu */
+    /* 0x14fd06/09/0c (ClearText_ext, UpdateWindowColor_ext, UpdateScrollRegs_ext)
+     * REMOVED from the dispatch (2026-07-16, 208->205). Their _emu helpers
+     * (clear_text_emu, update_window_color_emu, update_scroll_regs_emu) were
+     * permanent no-op stubs, silently breaking field-menu rendering (status/
+     * Gil windows and sub-menu content never drew) -- same class as the
+     * CheckMenu_c/ExecBtlGfx_c retirements. First fix attempt gave the
+     * helpers a real run_emulated_func delegation instead (matching the
+     * ExecBtlGfx_emu/ExecDMA_emu pattern) -- correct and regression-free on
+     * the desktop harness, but it HARD-FAULTS ON DEVICE: these three are
+     * reached from within CheckMenu_c's own interpreted execution (itself
+     * delegating into MainMenu_ext via run_emulated_func), so the delegating
+     * fix added a SECOND nested run_emulated_func call one level deep. The
+     * desktop's multi-MB stack absorbs it; the STM32H7's far smaller stack
+     * does not -- confirmed on real hardware (isolated cherry-pick test: the
+     * exact same known-good build hard-faults with only this delegation
+     * added, and boots clean without it). Retiring the three hooks instead
+     * (rather than delegating) lets the ALREADY-RUNNING interpreter execute
+     * them inline, with no native-C/interpreter round-trip at all -- the
+     * same code path already verified visually correct on desktop via
+     * --exclude 14fd06/14fd09/14fd0c bisection. See MemPalace wing=ff4-gnw
+     * room=obstacles-and-solutions and ff4-port/desktop/KNOWN_FINDINGS.md F13
+     * for the full investigation, including the nested-run_emulated_func /
+     * device-stack-depth pitfall this surfaced for the first time. */
     { 0x1585ab, InitWorld_c },  /* field */
     { 0x1589ed, InitInterrupts_c },  /* field */
     { 0x158b2a, InitDMA_c },  /* field */
