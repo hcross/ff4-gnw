@@ -10,6 +10,7 @@ void Mult16_c(Snes *snes) {
     uint16_t m3943 = 0;            /* stz $3943 */
     uint16_t m3941 = 0;            /* stz $3941 */
     uint8_t  carry = snes->cpu->c;
+    bool     v     = snes->cpu->v;   /* only the adc writes V; last one wins */
 
     int n_ones = 0, n_zeros = 0;
 
@@ -22,6 +23,7 @@ void Mult16_c(Snes *snes) {
         if (carry) {
             /* clc / lda $393d / adc $3943 / sta $3943 */
             uint32_t sum = (uint32_t)multiplicand + m3943;
+            v = (~(multiplicand ^ m3943) & (multiplicand ^ (uint16_t)sum) & 0x8000) != 0;
             m3943  = (uint16_t)(sum & 0xFFFF);
             carry  = (sum > 0xFFFF) ? 1 : 0;
             n_ones++;
@@ -56,6 +58,7 @@ void Mult16_c(Snes *snes) {
     snes->cpu->z  = true;   /* last dex result = 0 */
     snes->cpu->n  = false;
     snes->cpu->c  = carry;
+    snes->cpu->v  = v;
 }
 
 // PITFALLS: 1 (DB=$7E required for correct RAM access), 9 (high byte of A preserved in B hidden register)
@@ -66,4 +69,5 @@ void Mult16_c(Snes *snes) {
 //   output_ram:  $3941=2 (low word), $3943=2 (high word), $393F=2 (0 after shift)
 //   entry_mode:  mf=false, xf=false, dp=0x0, db=0x7E
 //   entry_flags: c=initial carry consumed by first ROR
+// STRICT: full-state equivalent (FF4_SPIKE_STRICT=gate), V from the last adc (2026-10-10).
 // REVERSED_FUNCTION: battle::Mult16 ($03:83B9)
