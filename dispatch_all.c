@@ -257,6 +257,9 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x12e35b, WaitVblankEvent_c },  /* field */
     { 0x12e55a, FindEventTerminator_c },  /* field */
     { 0x12e613, EventCmd_d8_c },  /* field */
+    /* Re-keyed 2026-10-10 (ADR-009): TfrInvertPal's true entry, called once
+     * by JSR $EE37 in FieldNMI. First native execution of this body. */
+    { 0x00ee37, TfrInvertPal_c },  /* field */
     /* REMOVED 2026-10-10 (F16 / ADR-009): eight entries keyed in bank $12,
      * whose PCs hold $FF padding -- no JSR/JSL can ever target them, so they
      * never fired and their native bodies never ran in game:
