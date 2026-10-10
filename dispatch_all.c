@@ -106,7 +106,9 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
                                             wing=ff4-gnw room=obstacles-and-solutions for the
                                             full finding. */
     { 0x00ffbc, InitCharProp_ext_c },  /* field */
-    { 0x00ffe0, Vectors_c },  /* field */
+    /* { 0x00ffe0, Vectors_c } REMOVED 2026-10-10 (F16 / ADR-009): $00:FFE0 is
+     * the vector area ($FF padding), never a JSR/JSL target -- this entry could
+     * not fire. See registry/DEAD_ENTRIES.md. */
     { 0x018010, UpdateCtrlField_ext_c },  /* menu */
     { 0x01ca85, TfrVRAM_c },  /* field */
     { 0x01d718, FadeIn_c },  /* field */
@@ -255,14 +257,18 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     { 0x12e35b, WaitVblankEvent_c },  /* field */
     { 0x12e55a, FindEventTerminator_c },  /* field */
     { 0x12e613, EventCmd_d8_c },  /* field */
-    { 0x12e7d3, EventCmd_d7_c },  /* field */
-    { 0x12eb47, EventCmd_e0_c },  /* field */
-    { 0x12ec06, EventCmd_e6_c },  /* field */
-    { 0x12ec3e, EventCmd_dd_c },  /* field */
-    { 0x12ed1d, SetCurrGil_c },  /* field */
-    { 0x12ee1c, EventCmd_d0_c },  /* field */
-    { 0x12ee25, EventCmd_d1_c },  /* field */
-    { 0x12ee35, TfrInvertPal_c },  /* field */
+    /* REMOVED 2026-10-10 (F16 / ADR-009): eight entries keyed in bank $12,
+     * whose PCs hold $FF padding -- no JSR/JSL can ever target them, so they
+     * never fired and their native bodies never ran in game:
+     *   { 0x12e7d3, EventCmd_d7_c }  { 0x12eb47, EventCmd_e0_c }
+     *   { 0x12ec06, EventCmd_e6_c }  { 0x12ec3e, EventCmd_dd_c }
+     *   { 0x12ed1d, SetCurrGil_c }   { 0x12ee1c, EventCmd_d0_c }
+     *   { 0x12ee25, EventCmd_d1_c }  { 0x12ee35, TfrInvertPal_c }
+     * The real routines live in bank $00 (e.g. TfrInvertPal at $00:EE37, the
+     * off-by-2 annotation class, called once by JSR $EE37 @ $00:92D1). Re-keying
+     * them there means running them natively for the FIRST time: requalify
+     * (strict spike at the true PC, oracle, device) before re-adding. Bodies
+     * stay in the tree. See registry/DEAD_ENTRIES.md. */
     { 0x13bfe3, _00bfe3_c },  /* field */
     { 0x13c11f, ReloadNPCs_c },  /* field */
     { 0x13d730, LoadTheEndGfx_c },  /* cutscene */
