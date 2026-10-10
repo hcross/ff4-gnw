@@ -82,7 +82,9 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
                                           replaces the retired 0x1e9f6c (rewritten bank + off-by-2: $1E:9F6C
                                           is data, never a call target — its old L2 evidence was vacuous) */
     { 0x009fc2, GetTileProps_c },  /* field — map tile properties; entry is $9FC2 not $9FC0 (disasm off-by-2, 4th instance) */
-    { 0x00aa58, CheckTilePass_c },  /* field */
+    /* { 0x00aa58, CheckTilePass_c } re-keyed 2026-10-10 (ADR-009): $00:AA58 is
+     * mid-routine (off-by-2 annotation); the 4 callers JSR $AA5A. */
+    { 0x00aa5a, CheckTilePass_c },  /* field */
     { 0x00aad8, SetPlayerNPCMap_c },  /* field */
     { 0x00ab13, ClearPlayerNPCMap_c },  /* field */
     { 0x00ac7d, CheckVehicleBlock_c },  /* field */

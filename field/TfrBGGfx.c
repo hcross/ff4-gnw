@@ -52,6 +52,7 @@ void TfrBGGfx_c(Snes *snes) {
 //   inputs_reg:  a=none, x=none, y=none
 //   inputs_ram:  none
 //   output_ram:  0x4300=1, 0x4301=1, 0x4305=1, 0x4307=1 (volatile IO)
-//   entry_mode:  mf=true, xf=false, dp=0x0, db=0xB1
+//   entry_mode:  mf=true, xf=false, dp=0x0600, db=0x00
 //   entry_flags: z=auto, n=auto
+// ENTRY_STATE: entry_mode corrected 2026-10-10 from the observed game entry (registry/ENTRY_STATE.md).
 // REVERSED_FUNCTION: field::TfrBGGfx ($B1:43)

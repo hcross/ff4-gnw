@@ -1,67 +1,83 @@
 #include "snes/snes.h"
 
-// Entry mode: A 8-bit (mf=1), X/Y 16-bit (xf=0), DB=$AA, DP=0
-// This routine determines if the player can pass through a tile.
-// It checks for running events, NPC blocks, and bridge/z-level constraints.
-// The result is returned in A (1 = Pass, 0 = Blocked).
-void CheckTilePass_c(Snes *snes) {
-    uint8_t *ram = snes->ram;
+extern void run_emulated_func(Snes *snes, uint32_t addr);
 
-    if (ram[0xB1] != 0) {                 // lda $b1 / beq @aa5f (BNE is implicit)
-        snes->cpu->a = 0;
-        return;
-    }
+/* CheckTilePass ($00:AA5A -- annotated $AA58, off-by-2; four callers
+ * `jsr $AA5A` at $00:A987/A9A2/A9BD/A9D8, field context m=8, x=16,
+ * D=$0600, DB=$00). A = 1 if the player may step onto the tile, else 0.
+ *
+ *   lda $b1 / beq @+ / lda #0 / rts         ; event running -> blocked
+ *   jsr CheckNPCBlock ($AA96) / cmp #0 / bne @pass
+ *   lda $0709 / asl / tay                   ; x=16: Y = B:A
+ *   lda $a1 / and #$04 / beq @plain         ; bridge tile?
+ *   lda $06a1,y / and #$03 / and $d2 / beq @bridge_ok / lda #0 / rts
+ *   @bridge_ok: lda $06a1,y / and #$04 / beq @pass / lda #0 / rts
+ *   @plain: lda $06a1,y / and $0a / beq @pass / lda #0 / rts
+ *   @pass: lda #1 / rts
+ *
+ * $b1/$a1/$d2/$0a are DIRECT-PAGE operands ([D+n]); $0709/$06a1,y are
+ * absolute (DB-relative). Rewritten 2026-10-10 when the entry was re-keyed
+ * from the dead $00:AA58 (ADR-009): the old body read D=0 addresses, turned
+ * `and $0a` into the constant `& 0x0A`, truncated the 16-bit tay, and called
+ * a no-op CheckNPCBlock_emu -- it had never run in game. CheckNPCBlock is
+ * delegated to the asm with the firmware's run_emulated_func. */
 
-    // jsr CheckNPCBlock / cmp #$00 / bne @aa91
-    // FIX (2026-07-06, KNOWN_FINDINGS.md F1): CheckNPCBlock_emu is `void`
-    // -- the real result belongs in cpu->a, not a C return value (same
-    // mechanical bug as CalcHits.c's Rand99_emu call). This only corrects
-    // how the result is READ; CheckNPCBlock_emu itself is still an
-    // unimplemented no-op stub (CheckNPCBlock @ $AA:?? was never
-    // translated), so cpu->a here is still not a real NPC-block result --
-    // untouched, separate follow-up.
-    CheckNPCBlock_emu(snes);
-    uint16_t npc_res = (uint16_t)snes->cpu->a;
-    if (npc_res != 0) {
-        snes->cpu->a = 1;
-        return;
-    }
-
-    // lda $0709 / asl / tay
-    uint8_t y = (uint8_t)(ram[0x0709] << 1); // Pitfall 7: 8-bit truncation
-
-    // lda $a1 / and #$04 / beq @aa7d
-    if (ram[0xA1] & 0x04) {               // Bridge tile
-        uint8_t tile_val = ram[0x06A1 + y];
-        // lda $06a1,y / and #$03 / and $d2 / beq @aa87
-        if ((tile_val & 0x03) & ram[0xD2]) {
-            snes->cpu->a = 0;
-            return;
-        }
-        // lda $06a1,y / and #$04 / beq @aa91
-        if (tile_val & 0x04) {
-            snes->cpu->a = 0;
-            return;
-        }
-    } else {                             // Not bridge tile (@aa7d)
-        uint8_t tile_val = ram[0x06A1 + y];
-        // lda $06a1,y / and $0a / beq @aa91
-        if (tile_val & 0x0A) {
-            snes->cpu->a = 0;
-            return;
-        }
-    }
-
-    snes->cpu->a = 1; // @aa91: lda #$01
+static uint8_t dp8(Snes *snes, uint8_t off) {
+    return snes_read(snes, (uint16_t)(snes->cpu->dp + off));
 }
 
-// PITFALLS: 7 (8-bit ASL truncation via uint8_t cast)
-// HELPERS: CheckNPCBlock_emu(snes)
+static void set_al(Cpu *cpu, uint8_t v) {
+    cpu->a = (uint16_t)((cpu->a & 0xFF00) | v);
+    cpu->z = (v == 0);
+    cpu->n = (v & 0x80) != 0;
+}
+
+void CheckTilePass_c(Snes *snes) {
+    Cpu *cpu = snes->cpu;
+    uint32_t db = (uint32_t)cpu->db << 16;
+
+    if (dp8(snes, 0xB1) != 0) {          /* lda $b1 / beq */
+        set_al(cpu, 0x00);               /* lda #$00 */
+        return;
+    }
+
+    run_emulated_func(snes, 0x00AA96);   /* jsr CheckNPCBlock */
+    uint8_t npc = (uint8_t)cpu->a;
+    cpu->c = true;                       /* cmp #$00: A >= 0 */
+    if (npc != 0) {                      /* bne @aa91 */
+        set_al(cpu, 0x01);
+        return;
+    }
+
+    uint8_t dir = snes_read(snes, db | 0x0709);       /* lda $0709 */
+    cpu->c = (dir & 0x80) != 0;                        /* asl */
+    cpu->a = (uint16_t)((cpu->a & 0xFF00) | (uint8_t)(dir << 1));
+    cpu->y = cpu->a;                                   /* tay (x=16) */
+    uint8_t tile = snes_read(snes, (db + 0x06A1 + cpu->y) & 0xFFFFFF);
+
+    uint8_t blocked;
+    if (dp8(snes, 0xA1) & 0x04) {                      /* bridge tile */
+        if ((tile & 0x03) & dp8(snes, 0xD2))
+            blocked = 1;                               /* z-level matches */
+        else
+            blocked = (tile & 0x04) != 0;
+    } else {
+        blocked = (tile & dp8(snes, 0x0A)) != 0;       /* and $0a (memory) */
+    }
+    set_al(cpu, blocked ? 0x00 : 0x01);
+}
+
+// PITFALLS: 1 (direct-page operands, D=$0600), off-by-2 entry ($AA5A),
+//           `and $0a` is a memory operand, 16-bit tay keeps B
+// HELPERS: run_emulated_func(CheckNPCBlock @ $00:AA96)
+// SPIKE NOTE: $06B1 (event-running gate) is left at its baseline value --
+// fuzzing it sends 255/256 trials down the trivial early exit and starves the
+// tile paths (a reinjected `& 0x0A` mutant was caught 4/300000 vs 576/50000).
 // CONTRACT:
-//   inputs_reg:  a=none, x=none, y=none
-//   inputs_ram:  0x0B1=1, 0x0709=1, 0x0A1=1, 0x0D2=1, 0x06A1=1
+//   inputs_reg:  a=2, x=none, y=none
+//   inputs_ram:  0x0709=1, 0x06A1..06B0=tiles, 0x06D2=1, 0x060A=1
 //   output_ram:  none
-//   entry_mode:  mf=true, xf=false, dp=0x0, db=0xAA
+//   entry_mode:  mf=true, xf=false, dp=0x0600, db=0x00
 //   entry_flags: z=auto, n=auto
-//   returns: uint8_t in snes->cpu->a
-// REVERSED_FUNCTION: field::CheckTilePass ($AA:58)
+// SPIKE_COMPARE: region
+// REVERSED_FUNCTION: field::CheckTilePass ($00:AA5A)
