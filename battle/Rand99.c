@@ -9,6 +9,10 @@ void Rand99_c(Snes *snes) {
     // clr_ax → tdc / tax (A = DP = 0, X = A = 0)
     // Since DP=0 (battle convention), clr_ax produces A=0, X=0
     // Then lda #98 sets A=98
+    snes->cpu->x = 0;    // tax: X = 0 is RandXA's LOWER bound. Omitting it
+                         // (until 2026-10-10) rolled in [stale X..98] -- in
+                         // CalcHits' loop X is the previous roll, biasing hit
+                         // rolls upward (more misses). F17.
     snes->cpu->a = 98;
     // jsr RandXA (expects A=upper bound, returns random 0..A in A and X)
     // RandXA is not yet translated, so delegate
@@ -26,5 +30,7 @@ void Rand99_c(Snes *snes) {
 //   inputs_ram:  none
 //   output_ram:  none
 //   entry_mode:  mf=true, xf=false, dp=0x0, db=0x7E
+// SPIKE_COMPARE: region
+// STRICT: full-state equivalent (FF4_SPIKE_STRICT=gate) with X cleared (2026-10-10).
 //   entry_flags: z=auto, n=auto
 // REVERSED_FUNCTION: battle::Rand99 ($03:858B)
