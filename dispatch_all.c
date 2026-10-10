@@ -85,8 +85,12 @@ const ff4_dispatch_entry_t ff4_dispatch_table[FF4_DISPATCH_COUNT] = {
     /* { 0x00aa58, CheckTilePass_c } re-keyed 2026-10-10 (ADR-009): $00:AA58 is
      * mid-routine (off-by-2 annotation); the 4 callers JSR $AA5A. */
     { 0x00aa5a, CheckTilePass_c },  /* field */
-    { 0x00aad8, SetPlayerNPCMap_c },  /* field */
-    { 0x00ab13, ClearPlayerNPCMap_c },  /* field */
+    /* { 0x00aad8, SetPlayerNPCMap_c } re-keyed 2026-10-10 (ADR-009): off-by-2 key, the
+     * caller(s) use JSR $AADA x2. */
+    { 0x00aada, SetPlayerNPCMap_c },  /* field */
+    /* { 0x00ab13, ClearPlayerNPCMap_c } re-keyed 2026-10-10 (ADR-009): off-by-2 key, the
+     * caller(s) use JSR $AB15 x1. */
+    { 0x00ab15, ClearPlayerNPCMap_c },  /* field */
     { 0x00ac7d, CheckVehicleBlock_c },  /* field */
     { 0x00bb6a, DrawNpcs_c },  /* field — draw all NPC + party sprites into the OAM shadow; entry is $BB6A not $BB68 (disasm off-by-2, 7th instance; all 6 callers are 20 6A BB) */
     { 0x00be47, CalcVehicleSpritePos_c },  /* field */
