@@ -83,6 +83,7 @@ void InitMapRAM_c(Snes *snes) {
 //   inputs_reg:  a=none, x=none, y=none
 //   inputs_ram:  none
 //   output_ram:  0x06FB=2
-//   entry_mode:  mf=true, xf=false, dp=cpu->dp (NOT 0x0 -- see FIX comment), db=0x0
+//   entry_mode:  mf=true, xf=false, dp=0x0600 (observed at entry; the body uses cpu->dp, NOT 0x0 -- see FIX comment), db=0x0
 //   entry_flags: z=auto, n=auto
+// ENTRY_STATE: entry_mode corrected 2026-10-10 from the observed game entry (registry/ENTRY_STATE.md).
 // REVERSED_FUNCTION: field::InitMapRAM ($83:4E)

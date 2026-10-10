@@ -18,7 +18,8 @@ void _15c23d_c(Snes *snes) {
 //   inputs_reg:  none
 //   inputs_ram:  none
 //   output_ram:  none
-//   entry_mode:  mf=true, xf=false, dp=0x0, db=0x0
+//   entry_mode:  mf=true, xf=false, dp=0x0600, db=0x0
 //   entry_flags: auto
 
+// ENTRY_STATE: entry_mode corrected 2026-10-10 from the observed game entry (registry/ENTRY_STATE.md).
 // REVERSED_FUNCTION: field::_15c23d ($C2:3D)

@@ -67,7 +67,8 @@ void Mult16_c(Snes *snes) {
 //   inputs_reg:  cpu->c (initial carry for first ROR)
 //   inputs_ram:  $393D=2 (multiplicand), $393F=2 (multiplier — mutated to 0)
 //   output_ram:  $3941=2 (low word), $3943=2 (high word), $393F=2 (0 after shift)
-//   entry_mode:  mf=false, xf=false, dp=0x0, db=0x7E
+//   entry_mode:  mf=true, xf=false, dp=0x0, db=0x7E
 //   entry_flags: c=initial carry consumed by first ROR
 // STRICT: full-state equivalent (FF4_SPIKE_STRICT=gate), V from the last adc (2026-10-10).
+// ENTRY_STATE: entry_mode corrected 2026-10-10 from the observed game entry (registry/ENTRY_STATE.md).
 // REVERSED_FUNCTION: battle::Mult16 ($03:83B9)

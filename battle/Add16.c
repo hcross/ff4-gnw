@@ -16,6 +16,14 @@ void Add16_c(Snes *snes) {
 
     write16(ram, 0x395A, result_lo);   // sta $395a
     write16(ram, 0x395C, carry_hi);    // sta $395c (carry stored as 16-bit)
+
+    // adc #0 on 0 + carry cannot carry or overflow; shorta0 = tdc / sep #$20.
+    snes->cpu->c  = false;
+    snes->cpu->v  = false;
+    snes->cpu->a  = snes->cpu->dp;
+    snes->cpu->z  = (snes->cpu->dp == 0);
+    snes->cpu->n  = (snes->cpu->dp & 0x8000) != 0;
+    snes->cpu->mf = true;
 }
 
 // PITFALLS: 6 (mode A is 16-bit due to `longa`), 7 (arithmetic truncation
@@ -24,6 +32,8 @@ void Add16_c(Snes *snes) {
 // CONTRACT:
 //   inputs_ram:  0x3956=2, 0x3958=2
 //   output_ram:  0x395A=2, 0x395C=2
-//   entry_mode:  mf=false, xf=false, dp=0x0, db=0x7E
+//   entry_mode:  mf=true, xf=false, dp=0x0, db=0x7E
 //   entry_flags: z=auto, n=auto
+// STRICT: full-state equivalent (FF4_SPIKE_STRICT=gate), 2026-10-10.
+// ENTRY_STATE: entry_mode corrected 2026-10-10 from the observed game entry (registry/ENTRY_STATE.md).
 // REVERSED_FUNCTION: battle::Add16 ($84:E3)

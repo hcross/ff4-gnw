@@ -12,6 +12,7 @@ void UpdateCtrl_ext_c(Snes *snes) {
 //   inputs_reg:  a=none, x=none, y=none
 //   inputs_ram:  none
 //   output_ram:  none
-//   entry_mode:  mf=true, xf=false, dp=0, db=0xFD
+//   entry_mode:  mf=true, xf=false, dp=0x0037, db=0x7E
 //   entry_flags: z=auto, n=auto
+// ENTRY_STATE: entry_mode corrected 2026-10-10 from the observed game entry (registry/ENTRY_STATE.md).
 // REVERSED_FUNCTION: menu::UpdateCtrl_ext ($FD:03)

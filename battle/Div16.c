@@ -52,8 +52,9 @@ void Div16_c(Snes *snes) {
 // CONTRACT:
 //   inputs_ram:  0x3945=2, 0x3947=2
 //   output_ram:  0x3949=2
-//   entry_mode:  mf=false, xf=false, dp=0x0, db=0x7E
+//   entry_mode:  mf=true, xf=false, dp=0x0, db=0x7E
 // STRICT: full-state equivalent (FF4_SPIKE_STRICT=gate) -- remainder $394B,
 //   rotated dividend $3945, A=D, X=0, NZVC and m=8 at exit all match the asm.
 //   entry_flags: z=auto, n=auto
+// ENTRY_STATE: entry_mode corrected 2026-10-10 from the observed game entry (registry/ENTRY_STATE.md).
 // REVERSED_FUNCTION: battle::Div16 ($84:07)
